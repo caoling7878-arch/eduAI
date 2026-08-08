@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>几何动图实验室 · eduAI</title>
+  <style>
+    :root {
+      --brand: #0F6B5C;
+      --accent: #E8A317;
+      --ink: #14212B;
+      --muted: #5C6B73;
+      --surface: #F3F6F4;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; font-family: "Source Han Sans SC", "IBM Plex Sans", "PingFang SC", sans-serif;
+      color: var(--ink); background: linear-gradient(160deg, #F3F6F4 0%, #E7EEF5 100%);
+      min-height: 100vh;
+    }
+    header {
+      padding: 48px 24px 24px; max-width: 920px; margin: 0 auto;
+    }
+    .brand {
+      font-family: "Source Han Serif SC", "Songti SC", serif;
+      font-size: clamp(2rem, 4vw, 2.75rem); font-weight: 700; color: var(--brand);
+      letter-spacing: 0.02em; margin: 0 0 8px;
+    }
+    .lead { color: var(--muted); font-size: 1.05rem; max-width: 36em; line-height: 1.6; }
+    main {
+      max-width: 920px; margin: 0 auto; padding: 8px 24px 64px;
+      display: grid; gap: 28px;
+    }
+    section {
+      background: rgba(255,255,255,0.72); border: 1px solid rgba(15,107,92,0.12);
+      border-radius: 16px; padding: 24px 28px;
+    }
+    h2 {
+      margin: 0 0 6px; font-size: 1.2rem; color: var(--brand);
+    }
+    .tag {
+      display: inline-block; font-size: 0.75rem; color: var(--ink);
+      background: color-mix(in srgb, var(--accent) 28%, white);
+      padding: 2px 8px; border-radius: 4px; margin-bottom: 12px;
+    }
+    ul { margin: 0; padding-left: 1.2em; line-height: 1.9; }
+    a { color: var(--brand); text-decoration: none; border-bottom: 1px solid transparent; }
+    a:hover { border-bottom-color: var(--accent); }
+    footer {
+      max-width: 920px; margin: 0 auto; padding: 0 24px 48px;
+      font-size: 0.85rem; color: var(--muted);
+    }
+    .empty { color: var(--muted); }
+  </style>
+</head>
+<body>
+  <header>
+    <p class="brand">eduAI 几何动图实验室</p>
+    <p class="lead">基于开源项目 <strong>edulab</strong>：用 sympy 精确求解，生成可交互的立体几何（Three.js）与解析几何（Canvas）教学页，把「算对」和「看懂」合在同一屏。</p>
+  </header>
+  <main>
+    <section>
+      <span class="tag">立体几何 · 3D</span>
+      <h2>edu-solid-geometry</h2>
+      <ul><li><a href="solid/box.html">box</a></li>
+<li><a href="solid/cube.html">cube</a></li>
+<li><a href="solid/pyramid.html">pyramid</a></li>
+<li><a href="solid/random-7.html">random-7</a></li></ul>
+    </section>
+    <section>
+      <span class="tag">解析几何 · 2D</span>
+      <h2>edu-analytic-geometry</h2>
+      <ul><li><a href="analytic/ellipse_area_max.html">ellipse area max</a></li>
+<li><a href="analytic/ellipse_chord_range.html">ellipse chord range</a></li>
+<li><a href="analytic/ellipse_dot_range.html">ellipse dot range</a></li>
+<li><a href="analytic/ellipse_slopeprod_const.html">ellipse slopeprod const</a></li>
+<li><a href="analytic/hyperbola_ecc_range.html">hyperbola ecc range</a></li>
+<li><a href="analytic/parabola_dot_const.html">parabola dot const</a></li></ul>
+    </section>
+    <section>
+      <span class="tag">可选扩展 · 化学微观</span>
+      <h2>edu-chem-reaction</h2>
+      <ul><li><a href="chem/combustion_ch4.html">combustion ch4</a></li>
+<li><a href="chem/esterification.html">esterification</a></li></ul>
+    </section>
+  </main>
+  <footer>
+    上游：<a href="https://github.com/wy51ai/edulab">wy51ai/edulab</a>（Apache-2.0）·
+    本地路径 <code>vendor/edulab</code> ·
+    重新生成 <code>python3 tools/geometry-lab/generate.py demos</code>
+  </footer>
+</body>
+</html>

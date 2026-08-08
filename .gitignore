@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# Node
+node_modules/
+dist/
+.turbo/
+apps/web/dist/
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# API data
+apps/api/data/
+apps/api/.venv/
+
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/
+.run/
+.tmp/
+backups/
+
+# edulab upstream local outputs (keep our content/ demos)
+vendor/edulab/skills/**/output/
+vendor/edulab/skills/**/__pycache__/

@@ -1,0 +1,3 @@
+# edulab 几何 / 化学交互课页生成依赖
+# 上游：https://github.com/wy51ai/edulab (Apache-2.0)
+sympy>=1.12

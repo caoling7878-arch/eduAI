@@ -1,0 +1,62 @@
+:root {
+  --brand: #0f6b5c;
+  --brand-deep: #0a4f44;
+  --brand-soft: rgba(15, 107, 92, 0.1);
+  --accent: #e8a317;
+  --accent-soft: rgba(232, 163, 23, 0.18);
+  --ink: #14212b;
+  --muted: #5c6b73;
+  --line: rgba(20, 33, 43, 0.1);
+  --surface-0: #f3f6f4;
+  --surface-1: #e7eef5;
+  --white: #ffffff;
+  --shadow: 0 12px 40px rgba(20, 33, 43, 0.08);
+  --radius: 16px;
+  --font-display: 'Noto Serif SC', 'Songti SC', serif;
+  --font-body: 'IBM Plex Sans', 'PingFang SC', 'Noto Sans SC', sans-serif;
+  --nav-h: 64px;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  color: var(--ink);
+  font-family: var(--font-body);
+  background:
+    radial-gradient(1200px 600px at 10% -10%, rgba(15, 107, 92, 0.12), transparent 55%),
+    radial-gradient(900px 500px at 90% 0%, rgba(232, 163, 23, 0.14), transparent 50%),
+    linear-gradient(165deg, var(--surface-0) 0%, var(--surface-1) 100%);
+  background-attachment: fixed;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+img {
+  max-width: 100%;
+  display: block;
+}
+
+::selection {
+  background: var(--brand-soft);
+}
