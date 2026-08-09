@@ -19,6 +19,17 @@ apps/web/dist/
 # API data
 apps/api/data/
 apps/api/.venv/
+apps/api/.venv-desktop/
+apps/api/app/spa/
+apps/api/build/
+apps/api/dist/
+
+# Desktop packaging
+desktop/node_modules/
+desktop/dist/
+desktop/resources/
+desktop/build/icon.ico
+desktop/build/icon.icns
 
 # OS / IDE
 .DS_Store

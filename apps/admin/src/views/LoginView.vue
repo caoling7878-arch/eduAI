@@ -3,6 +3,7 @@ import { onMounted, reactive, ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { fetchMe, login, setToken } from '../lib/api'
+import { webBaseUrl } from '../lib/webEntry'
 
 const router = useRouter()
 const route = useRoute()
@@ -69,8 +70,8 @@ onMounted(() => {
         进入后台
       </el-button>
       <small>系统管理员：admin@edu.ai / admin123 · 教师：teacher@edu.ai / teacher123</small>
-      <small class="hint">学员端登录页：http://127.0.0.1:5173/auth（登录后不会自动跳转至此）。</small>
-      <a class="back" href="http://127.0.0.1:5173/">← 返回学员端首页</a>
+      <small class="hint">学员端登录页：{{ webBaseUrl() }}/auth（登录后不会自动跳转至此）。</small>
+      <a class="back" :href="`${webBaseUrl()}/`">← 返回学员端首页</a>
     </form>
   </div>
 </template>

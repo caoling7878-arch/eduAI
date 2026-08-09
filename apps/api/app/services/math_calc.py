@@ -380,7 +380,13 @@ _EQ_LOOSE = re.compile(
 
 
 def _pdf_dir() -> Path:
-    # repo root / 1-6年级计算专项练习
+    # repo root / 1-6年级计算专项练习（桌面打包时在 _MEIPASS 下）
+    import sys
+
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        bundled = Path(sys._MEIPASS) / "1-6年级计算专项练习"  # type: ignore[attr-defined]
+        if bundled.is_dir():
+            return bundled
     return Path(__file__).resolve().parents[4] / "1-6年级计算专项练习"
 
 

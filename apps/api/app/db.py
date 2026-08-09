@@ -64,6 +64,10 @@ def ensure_sqlite_columns() -> None:
             ("system_prompt", "TEXT DEFAULT ''"),
             ("suggested_prompts", "TEXT DEFAULT '[]'"),
         ],
+        "knowledge_docs": [
+            ("source_filename", "VARCHAR(255) DEFAULT ''"),
+            ("source_type", "VARCHAR(32) DEFAULT 'text'"),
+        ],
     }
     with engine.begin() as conn:
         for table, cols in patches.items():

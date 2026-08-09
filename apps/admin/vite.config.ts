@@ -3,6 +3,8 @@ import vue from '@vitejs/plugin-vue'
 
 export default defineConfig({
   plugins: [vue()],
+  // 桌面/生产由 API 挂载在 /admin
+  base: process.env.EDUAI_ADMIN_BASE || '/',
   server: {
     port: 5174,
     proxy: {

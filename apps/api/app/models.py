@@ -225,6 +225,8 @@ class KnowledgeDoc(Base):
     title: Mapped[str] = mapped_column(String(200))
     content: Mapped[str] = mapped_column(Text, default="")
     status: Mapped[str] = mapped_column(String(32), default="ready")
+    source_filename: Mapped[str] = mapped_column(String(255), default="")
+    source_type: Mapped[str] = mapped_column(String(32), default="text")  # text|pdf|md|txt|docx
 
 
 class MembershipPlan(Base):

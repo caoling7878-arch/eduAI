@@ -221,7 +221,67 @@ export const searchKb = (body: { kb_id: number; query: string; top_k?: number })
     method: 'POST',
     body: JSON.stringify(body),
   })
-export const fetchEmbeddingStatus = () => api<any>('/knowledge/embedding-status')
+export const fetchEmbeddingStatus = (probe = false) =>
+  api<any>(`/knowledge/embedding-status${probe ? '?probe=true' : ''}`)
+export const fetchEmbeddingConfig = () => api<any>('/knowledge/embedding-config')
+export const saveEmbeddingConfig = (body: {
+  mode: string
+  base_url?: string
+  api_key?: string | null
+  model?: string
+}) =>
+  api<{ config: any; status: any }>('/knowledge/embedding-config', {
+    method: 'PUT',
+    body: JSON.stringify(body),
+  })
+
+export async function uploadKbDoc(kbId: number, file: File, title?: string) {
+  const headers = new Headers()
+  const token = getToken()
+  if (token) headers.set('Authorization', `Bearer ${token}`)
+  const form = new FormData()
+  form.append('file', file)
+  if (title?.trim()) form.append('title', title.trim())
+  const res = await fetch(`${API_BASE}/knowledge/bases/${kbId}/upload`, {
+    method: 'POST',
+    headers,
+    body: form,
+  })
+  if (!res.ok) {
+    let message = res.statusText
+    try {
+      const data = (await res.json()) as { detail?: string }
+      if (data.detail) message = data.detail
+    } catch {
+      /* ignore */
+    }
+    throw new ApiError(res.status, message)
+  }
+  return (await res.json()) as any
+}
+
+export const generateQuestionsFromKb = (
+  kbId: number,
+  body: { count?: number; difficulty?: number; topic?: string; query?: string },
+) =>
+  api<any>(`/knowledge/bases/${kbId}/generate-questions`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+
+export const generateCourseFromKb = (
+  kbId: number,
+  body: {
+    title?: string
+    chapter_count?: number
+    query?: string
+    create_assistant?: boolean
+  },
+) =>
+  api<any>(`/knowledge/bases/${kbId}/generate-course`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
 
 export const fetchPaperTemplates = () => api<any[]>('/templates/papers')
 export const createPaperTemplate = (body: Record<string, unknown>) =>

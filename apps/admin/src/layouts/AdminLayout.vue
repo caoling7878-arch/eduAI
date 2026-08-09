@@ -29,6 +29,7 @@ import {
   Monitor,
 } from '@element-plus/icons-vue'
 import { fetchMe, setToken, type User as UserT } from '../lib/api'
+import { webBaseUrl } from '../lib/webEntry'
 
 type MenuItem = { path: string; label: string; icon: unknown }
 type MenuGroup = { title: string; items: MenuItem[]; adminOnly?: boolean }
@@ -171,11 +172,8 @@ watch(
 
 function logout() {
   setToken(null)
-  // 退出后台后回到学员端未登录主页（:5173），不要留在管理端登录页
-  const web =
-    (import.meta.env.VITE_WEB_URL as string | undefined)?.replace(/\/$/, '') ||
-    'http://127.0.0.1:5173'
-  window.location.href = `${web}/?logout=1`
+  // 退出后台后回到学员端未登录主页，不要留在管理端登录页
+  window.location.href = `${webBaseUrl()}/?logout=1`
 }
 </script>
 
@@ -203,7 +201,7 @@ function logout() {
         </div>
       </nav>
 
-      <a class="front-link" href="http://127.0.0.1:5173/" target="_blank" rel="noopener">
+      <a class="front-link" :href="`${webBaseUrl()}/`" target="_blank" rel="noopener">
         <el-icon><Monitor /></el-icon>
         返回前台
       </a>

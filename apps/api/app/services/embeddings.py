@@ -11,8 +11,16 @@ from collections import Counter
 from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 HASH_DIM = 256
+DIM = HASH_DIM  # 历史别名
+
+SETTING_BASE = "embedding.base_url"
+SETTING_KEY = "embedding.api_key"
+SETTING_MODEL = "embedding.model"
+SETTING_MODE = "embedding.mode"  # auto | api | hash
 
 
 def tokenize(text: str) -> List[str]:
@@ -52,29 +60,99 @@ def embed_hash(text: str, dim: int = HASH_DIM) -> List[float]:
     return [v / norm for v in vec]
 
 
-def resolve_embedding_endpoint(
-    base_url: Optional[str] = None,
-    api_key: Optional[str] = None,
-    model: Optional[str] = None,
-) -> Tuple[Optional[str], Optional[str], str]:
+def _site_map(db: Optional[Session]) -> Dict[str, str]:
+    if db is None:
+        return {}
+    from ..models import SiteSetting
+
+    rows = list(db.scalars(select(SiteSetting).where(SiteSetting.key.like("embedding.%"))))
+    return {r.key: (r.value or "") for r in rows}
+
+
+def get_embedding_config(db: Optional[Session] = None) -> Dict[str, Any]:
+    """合并 SiteSetting → 环境变量后的有效配置（不含探测）。"""
+    site = _site_map(db)
+    # 默认 hash：避免把仅支持对话的 LLM 地址误当作 Embedding，导致检索维度错配
+    mode = (site.get(SETTING_MODE) or os.getenv("EMBEDDING_MODE") or "hash").strip().lower()
+    if mode not in ("auto", "api", "hash"):
+        mode = "hash"
+
     base = (
-        (base_url or "").rstrip("/")
+        (site.get(SETTING_BASE) or "").rstrip("/")
         or (os.getenv("EMBEDDING_BASE_URL") or "").rstrip("/")
         or (os.getenv("LLM_BASE_URL") or "").rstrip("/")
         or (os.getenv("OPENAI_BASE_URL") or "").rstrip("/")
     )
     key = (
-        api_key
+        site.get(SETTING_KEY)
         or os.getenv("EMBEDDING_API_KEY")
         or os.getenv("LLM_API_KEY")
         or os.getenv("OPENAI_API_KEY")
         or ""
     )
-    mdl = (
-        model
-        or os.getenv("EMBEDDING_MODEL")
+    model = (
+        (site.get(SETTING_MODEL) or "").strip()
+        or (os.getenv("EMBEDDING_MODEL") or "").strip()
         or "text-embedding-3-small"
     )
+    return {
+        "mode": mode,
+        "base_url": base,
+        "api_key": key,
+        "model": model,
+        "has_key": bool(key),
+        "source": "site" if site.get(SETTING_BASE) or site.get(SETTING_MODE) else "env",
+    }
+
+
+def save_embedding_config(
+    db: Session,
+    *,
+    mode: str = "auto",
+    base_url: str = "",
+    api_key: Optional[str] = None,
+    model: str = "text-embedding-3-small",
+) -> Dict[str, Any]:
+    from ..models import SiteSetting
+
+    mode = (mode or "auto").strip().lower()
+    if mode not in ("auto", "api", "hash"):
+        mode = "auto"
+
+    def upsert(k: str, v: str) -> None:
+        row = db.scalar(select(SiteSetting).where(SiteSetting.key == k))
+        if row is None:
+            db.add(SiteSetting(key=k, value=v))
+        else:
+            row.value = v
+
+    upsert(SETTING_MODE, mode)
+    upsert(SETTING_BASE, (base_url or "").rstrip("/"))
+    upsert(SETTING_MODEL, (model or "text-embedding-3-small").strip())
+    # api_key=None 表示不改；空字符串表示清空
+    if api_key is not None:
+        upsert(SETTING_KEY, api_key)
+    db.commit()
+    return get_embedding_config(db)
+
+
+def resolve_embedding_endpoint(
+    base_url: Optional[str] = None,
+    api_key: Optional[str] = None,
+    model: Optional[str] = None,
+    db: Optional[Session] = None,
+) -> Tuple[Optional[str], Optional[str], str]:
+    cfg = get_embedding_config(db)
+    if cfg["mode"] == "hash":
+        return None, None, "local-hash-256"
+    base = (base_url or "").rstrip("/") or cfg["base_url"] or None
+    key = api_key if api_key is not None and api_key != "" else (cfg["api_key"] or None)
+    if api_key == "":
+        key = None
+    mdl = model or cfg["model"] or "text-embedding-3-small"
+    if cfg["mode"] == "api" and (not base or not key):
+        # 强制 API 但未配齐时仍返回空，由调用方回退
+        return base, key, mdl
     return (base or None), (key or None), mdl
 
 
@@ -86,7 +164,12 @@ def embed_api(
     model: str,
     timeout: float = 30.0,
 ) -> List[float]:
-    url = f"{base_url.rstrip('/')}/embeddings"
+    root = base_url.rstrip("/")
+    # 兼容用户填了不带 /v1 的根地址
+    if root.endswith("/embeddings"):
+        url = root
+    else:
+        url = f"{root}/embeddings"
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     payload = {"model": model, "input": (text or "")[:8000]}
     with httpx.Client(timeout=timeout) as client:
@@ -111,19 +194,22 @@ def embed_text(
     api_key: Optional[str] = None,
     model: Optional[str] = None,
     prefer_api: bool = True,
+    db: Optional[Session] = None,
+    last_error: Optional[List[str]] = None,
 ) -> Tuple[List[float], str, str]:
     """
     返回 (vector, backend, model_name)。
     backend: api | hash
     """
     if prefer_api:
-        base, key, mdl = resolve_embedding_endpoint(base_url, api_key, model)
+        base, key, mdl = resolve_embedding_endpoint(base_url, api_key, model, db=db)
         if base and key:
             try:
                 vec = embed_api(text, base_url=base, api_key=key, model=mdl)
                 return vec, "api", mdl
-            except Exception:
-                pass
+            except Exception as e:
+                if last_error is not None:
+                    last_error.append(str(e)[:200])
     vec = embed_hash(text)
     return vec, "hash", "local-hash-256"
 
@@ -182,11 +268,6 @@ def loads_vec(raw: str) -> Tuple[List[float], str, str]:
     return [], "hash", ""
 
 
-# 兼容旧调用：仅返回向量
 def embed_text_legacy(text: str) -> List[float]:
     vec, _, _ = embed_text(text)
     return vec
-
-
-# 别名：历史代码使用 DIM
-DIM = HASH_DIM

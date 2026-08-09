@@ -6,7 +6,40 @@
 
 产品需求：[PRD.md](./PRD.md) · P0 步骤：[docs/P0-STEPS.md](./docs/P0-STEPS.md) · 许可证：[MIT](./LICENSE)
 
-> **部署方式**：不使用 Docker。本地三进程（API + 学员端 + 管理端）即可演示与交付。
+> **部署方式**：不使用 Docker。本地三进程（API + 学员端 + 管理端）即可演示与交付；亦可打包成 Windows / macOS 桌面安装包一键安装。
+
+---
+
+## 桌面安装包（Windows / macOS）
+
+面向最终用户的本地客户端：安装后出现 **eduAI** 应用图标，双击即可启动本地服务并打开系统界面（无需手动起三个进程）。
+
+| 平台 | 安装包 | 安装方式 |
+|------|--------|----------|
+| Windows | `install.exe` | 双击安装，自动创建桌面与开始菜单快捷方式 |
+| macOS | `eduAI-*.dmg` | 打开 DMG，将 **eduAI** 拖入「应用程序」 |
+
+**使用**
+
+1. 安装完成后点击 **eduAI** 图标启动  
+2. 学员端：窗口内首页；管理端：菜单「帮助 → 管理端」或访问 `/admin/`  
+3. 演示账号：`admin@edu.ai` / `admin123` · `teacher@edu.ai` / `teacher123` · `student@edu.ai` / `student123`
+
+**开发者如何打安装包**
+
+```bash
+# 在对应操作系统上执行（服务端二进制不可跨平台交叉编译）
+./tools/desktop/build.sh mac    # 在 Mac 上生成 DMG → desktop/dist/
+
+# Windows（推荐 PowerShell，含管理端 /admin 与 Embedding 修复校验）
+powershell -ExecutionPolicy Bypass -File tools\desktop\build.ps1
+# 产物：desktop\dist\install.exe
+```
+
+也可在 GitHub Actions 手动触发工作流 **Desktop Installers**（`.github/workflows/desktop-release.yml`），下载 `eduai-windows-installer` 产物中的 `install.exe`。  
+Windows / macOS 安装包均包含：管理端 SPA 路由回退、Embedding 配置与向量维度对齐。
+
+> 说明：桌面版将学员端与管理端构建为静态资源，由内嵌 API 单进程托管（默认端口 `18765`），数据保存在系统用户目录下的 eduAI 应用数据文件夹。
 
 ---
 
@@ -90,7 +123,7 @@ eduAI 把人工智能真正嵌进教学业务，而不是“挂一个聊天窗�
 
 ### 知识库、PPT 助手与学情报表
 
-校本资料入库切片并向量检索，供学伴引用；PPT 助手辅助大纲到课件；学情支持班级 / 个人薄弱点与 CSV 导出，便于教研例会与家校沟通。
+支持上传 **PDF / Markdown / TXT / DOCX** 教材（也可粘贴文本），自动切片向量化；可从知识库一键 **生成 AI 课程**（章节课时 + 可选绑定助教）与 **题库题目**；学伴对话引用教材片段。PPT 助手辅助大纲到课件；学情支持班级 / 个人薄弱点与 CSV 导出。
 
 ### 个人中心与合规
 
@@ -210,7 +243,7 @@ npm run dev --prefix apps/admin
 | 主观题批改 | AI 初评 + 教师复核 + 抽样质检 |
 | 错题本 / 学情 / 消息 | 错题沉淀、个人/班级薄弱点、系统通知；学情 CSV 导出 |
 | 电子书 / 几何挂课 | 读物阅读；课页挂到课时 API |
-| 向量知识库 | 文档切片 + 本地哈希向量检索；管理端可试检索 |
+| 向量知识库 | PDF/MD/TXT/DOCX 上传解析 + 文本入库；切片向量检索；从 KB 生成课程/题库/助教 |
 | 每日单词 / 美文 | 翻卡 + 词根词缀 + 配图 + 学习偏好；美文阅读流 |
 | 我爱背单词 | 中考 800 词、docx 配图、艾宾浩斯、打卡得星兑会员 |
 | 小学数学计算专项 | 1–6 年级、每日一页、草稿续作、计时判分、错题订正 |
@@ -242,15 +275,24 @@ LLM_MODEL=gpt-4o-mini
 
 ### 知识库 Embedding（可选）
 
-在 `apps/api/.env`：
+管理端 **知识库 → Embedding 配置** 可选择：
+
+| 模式 | 说明 |
+|------|------|
+| `hash` | 本地哈希向量（默认推荐，离线稳定，无维度错配） |
+| `auto` | 已配置且连通 `/embeddings` 时用 API，否则回退哈希 |
+| `api` | 强制使用 Embedding API |
+
+或在 `apps/api/.env`：
 
 ```
+EMBEDDING_MODE=auto
 EMBEDDING_BASE_URL=https://api.openai.com/v1
 EMBEDDING_API_KEY=sk-...
 EMBEDDING_MODEL=text-embedding-3-small
 ```
 
-未配置时自动使用本地哈希向量；也可复用已配置的 LLM Provider。管理端「知识库」可查看向量后端并重建索引。
+须使用支持 `/v1/embeddings` 的服务；纯对话接口（如部分 DeepSeek 部署）请用本地哈希。变更后端后请点「重建向量索引」。
 
 ### LTI / 用量包
 

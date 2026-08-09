@@ -78,9 +78,13 @@ app.add_middleware(
 )
 
 _static_root = Path(__file__).resolve().parent / "static"
-_static_root.mkdir(parents=True, exist_ok=True)
-(_static_root / "vocab").mkdir(parents=True, exist_ok=True)
-app.mount("/api/v1/static", StaticFiles(directory=str(_static_root)), name="static")
+try:
+    _static_root.mkdir(parents=True, exist_ok=True)
+    (_static_root / "vocab").mkdir(parents=True, exist_ok=True)
+except OSError:
+    pass
+if _static_root.is_dir():
+    app.mount("/api/v1/static", StaticFiles(directory=str(_static_root)), name="static")
 
 for mod in (
     auth,
@@ -131,3 +135,9 @@ for mod in (
 @app.get("/api/v1/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "version": "0.9.0"}
+
+
+# Production / desktop: serve built SPAs when present (after API routes).
+from .spa_serve import mount_spas  # noqa: E402
+
+mount_spas(app)

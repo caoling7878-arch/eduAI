@@ -2,6 +2,7 @@
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { attachLab, fetchCourses, fetchLabPages, fetchQuestions, patchLabPage } from '../lib/api'
+import { webBaseUrl } from '../lib/webEntry'
 
 const pages = ref<any[]>([])
 const courses = ref<any[]>([])
@@ -9,8 +10,7 @@ const questions = ref<any[]>([])
 const form = reactive({ lesson_id: 0 as number, page_key: '', title: '' })
 const editing = ref<Record<number, string>>({})
 const editingQids = ref<Record<number, number[]>>({})
-const webBase =
-  (import.meta.env.VITE_WEB_URL as string | undefined)?.replace(/\/$/, '') || 'http://127.0.0.1:5173'
+const webBase = webBaseUrl()
 
 const lessons = ref<Array<{ id: number; label: string }>>([])
 

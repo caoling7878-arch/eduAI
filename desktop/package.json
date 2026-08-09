@@ -1,0 +1,78 @@
+{
+  "name": "eduai-desktop",
+  "productName": "eduAI",
+  "version": "0.2.1",
+  "description": "eduAI 智慧教育云 — 本地桌面版",
+  "main": "main.js",
+  "author": "eduAI",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "pack:dir": "electron-builder --dir",
+    "dist:mac": "electron-builder --mac zip && bash scripts/make-dmg.sh",
+    "dist:win": "electron-builder --win nsis",
+    "dist": "echo '请在对应系统上分别执行 dist:mac / dist:win'"
+  },
+  "build": {
+    "appId": "ai.edu.desktop",
+    "productName": "eduAI",
+    "copyright": "Copyright © eduAI",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "splash.html",
+      "package.json",
+      "build/icon.png"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/server",
+        "to": "server",
+        "filter": ["**/*"]
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.education",
+      "target": ["zip"],
+      "icon": "build/icon.png",
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
+      "identity": null
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "build/icon.png",
+      "artifactName": "eduAI-Setup-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "eduAI",
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false,
+      "artifactName": "install.exe"
+    },
+    "linux": {
+      "target": ["AppImage"],
+      "category": "Education",
+      "icon": "build/icon.png"
+    }
+  },
+  "devDependencies": {
+    "electron": "^37.2.0",
+    "electron-builder": "^26.0.12"
+  }
+}

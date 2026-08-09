@@ -305,8 +305,24 @@ class KnowledgeDocOut(BaseModel):
     title: str
     content: str
     status: str
+    source_filename: str = ""
+    source_type: str = "text"
 
     model_config = {"from_attributes": True}
+
+
+class KbGenerateQuestionsIn(BaseModel):
+    count: int = Field(default=5, ge=1, le=20)
+    difficulty: int = Field(default=2, ge=1, le=5)
+    topic: str = ""
+    query: str = ""
+
+
+class KbGenerateCourseIn(BaseModel):
+    title: str = ""
+    chapter_count: int = Field(default=3, ge=1, le=8)
+    query: str = ""
+    create_assistant: bool = True
 
 
 class PptIn(BaseModel):
