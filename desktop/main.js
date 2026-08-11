@@ -234,6 +234,21 @@ function buildAppMenu() {
           },
         ]
       : []),
+    // macOS 上未注册 Edit 菜单时，Cmd+C/V/X 等在输入框中会失效（含 API Key、模型名、地址等）
+    {
+      label: '编辑',
+      submenu: [
+        { role: 'undo' },
+        { role: 'redo' },
+        { type: 'separator' },
+        { role: 'cut' },
+        { role: 'copy' },
+        { role: 'paste' },
+        { role: 'pasteAndMatchStyle' },
+        { role: 'delete' },
+        { role: 'selectAll' },
+      ],
+    },
     {
       label: '窗口',
       submenu: [
