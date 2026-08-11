@@ -1,0 +1,11 @@
+#!/bin/bash
+# pkg 安装后清除隔离属性，避免「eduAI 已损坏，无法打开」
+set -euo pipefail
+
+APP="/Applications/eduAI.app"
+if [[ -d "$APP" ]]; then
+  xattr -cr "$APP" 2>/dev/null || true
+  xattr -d com.apple.quarantine "$APP" 2>/dev/null || true
+  codesign --force --deep --sign - "$APP" 2>/dev/null || true
+fi
+exit 0

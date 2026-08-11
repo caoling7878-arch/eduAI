@@ -133,8 +133,8 @@ case "$TARGET" in
   mac)
     npm run dist:mac --prefix "$DESKTOP"
     echo
-    echo "✓ macOS 安装包已生成（将 eduAI.app 拖入「应用程序」即可）:"
-    ls -la "$DESKTOP/dist/"*.dmg 2>/dev/null || ls -la "$DESKTOP/dist/"
+    echo "✓ macOS 安装包已生成（请用 DMG 内「① 双击安装」或 .pkg，勿直接拖拽 .app）:"
+    ls -la "$DESKTOP/dist/"*.dmg "$DESKTOP/dist/"*.pkg 2>/dev/null || ls -la "$DESKTOP/dist/"
     ;;
   win)
     npm run dist:win --prefix "$DESKTOP"
