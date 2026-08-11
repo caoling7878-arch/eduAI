@@ -1,0 +1,50 @@
+name: Desktop Installers
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  mac:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Build macOS DMG
+        run: ./tools/desktop/build.sh mac
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eduai-mac-dmg
+          path: desktop/dist/*.dmg
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Build Windows install.exe
+        shell: pwsh
+        run: |
+          Set-ExecutionPolicy -Scope Process Bypass -Force
+          .\tools\desktop\build.ps1
+      - name: Verify installer
+        shell: pwsh
+        run: |
+          if (-not (Test-Path desktop\dist\install.exe)) { throw "install.exe missing" }
+          Get-Item desktop\dist\install.exe | Format-List FullName, Length, LastWriteTime
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eduai-windows-installer
+          path: desktop/dist/install.exe
