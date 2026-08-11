@@ -538,12 +538,13 @@ def seed_p1_defaults(db: Session) -> None:
                     meaning=meaning,
                     example=example,
                     level=level,
+                    bank="demo",
                     morphology_json=morph_json_dumps(morph),
                     image_key=str(morph.get("image_key") or word),
                 )
             )
     else:
-        # 幂等升级：补词根词缀 / 配图键，并加入示范长单词
+        # 幂等升级：补词根词缀 / 配图键，并加入示范长单词（独立 demo 词库，不混入考试分类）
         existing = {w.word.lower(): w for w in db.scalars(select(VocabWord))}
         for word, phonetic, meaning, example, level in vocab_seed:
             morph = morph_for(word)
@@ -556,6 +557,7 @@ def seed_p1_defaults(db: Session) -> None:
                         meaning=meaning,
                         example=example,
                         level=level,
+                        bank="demo",
                         morphology_json=morph_json_dumps(morph),
                         image_key=str(morph.get("image_key") or word),
                     )

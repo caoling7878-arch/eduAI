@@ -36,6 +36,7 @@ def ensure_sqlite_columns() -> None:
             ("morphology_json", "TEXT DEFAULT ''"),
             ("image_key", "VARCHAR(64) DEFAULT ''"),
             ("bank", "VARCHAR(32) DEFAULT 'zhongkao_800'"),
+            ("sort_order", "INTEGER DEFAULT 0"),
             ("pos", "VARCHAR(64) DEFAULT ''"),
             ("scene", "VARCHAR(120) DEFAULT ''"),
             ("frequency", "VARCHAR(120) DEFAULT ''"),
@@ -47,6 +48,10 @@ def ensure_sqlite_columns() -> None:
             ("next_review_date", "VARCHAR(16) DEFAULT ''"),
             ("wrong_count", "INTEGER DEFAULT 0"),
             ("last_result", "VARCHAR(16) DEFAULT ''"),
+        ],
+        "vocab_daily_logs": [
+            ("daily_count", "INTEGER DEFAULT 0"),
+            ("pack_json", "TEXT DEFAULT ''"),
         ],
         "grade_tasks": [
             ("qc_status", "VARCHAR(32) DEFAULT 'none'"),

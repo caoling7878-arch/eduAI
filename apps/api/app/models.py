@@ -481,8 +481,10 @@ class VocabWord(Base):
     morphology_json: Mapped[str] = mapped_column(Text, default="")
     # 意思配图键，前端用 SVG 场景渲染
     image_key: Mapped[str] = mapped_column(String(64), default="")
-    # 词库分类：zhongkao_800|cet4|cet6|ielts|toefl
+    # 词库分类：zhongkao_800|cet4|cet6|ielts|toefl|demo
     bank: Mapped[str] = mapped_column(String(32), default="zhongkao_800", index=True)
+    # 词库内课程顺序（导入 JSON 下标），用于按考试词库顺序出题
+    sort_order: Mapped[int] = mapped_column(Integer, default=0, index=True)
     pos: Mapped[str] = mapped_column(String(64), default="")
     scene: Mapped[str] = mapped_column(String(120), default="")
     frequency: Mapped[str] = mapped_column(String(120), default="")
@@ -520,6 +522,10 @@ class VocabDailyLog(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     day: Mapped[str] = mapped_column(String(16), index=True)  # YYYY-MM-DD
     bank: Mapped[str] = mapped_column(String(32), default="zhongkao_800")
+    # 生成词单时的每日新词数量快照；变更设置后需重建
+    daily_count: Mapped[int] = mapped_column(Integer, default=0)
+    # 当日固定词单 [{"id":1,"role":"new|review|wrong"}, ...]，学习/测验共用，避免写进度后换词
+    pack_json: Mapped[str] = mapped_column(Text, default="")
     new_count: Mapped[int] = mapped_column(Integer, default=0)
     review_count: Mapped[int] = mapped_column(Integer, default=0)
     quiz_total: Mapped[int] = mapped_column(Integer, default=0)

@@ -233,6 +233,7 @@ def put_prefs(
     bank_meta = next((b for b in BANKS if b["id"] == body.bank), None)
     if not bank_meta or not bank_meta["available"]:
         raise HTTPException(status_code=400, detail="该词库暂未开放，请选择「中学生必背单词」")
+    old = _load_prefs(db, user.id)
     key = _pref_key(user.id)
     raw = body.model_dump_json()
     row = db.scalar(select(SiteSetting).where(SiteSetting.key == key))
@@ -240,8 +241,93 @@ def put_prefs(
         row.value = raw
     else:
         db.add(SiteSetting(key=key, value=raw))
+    # 考试分类或每日数量变更后，丢弃当日固定词单，按新设置重建
+    if old.bank != body.bank or old.daily_count != body.daily_count:
+        _invalidate_today_pack(db, user.id)
     db.commit()
     return body
+
+
+def _invalidate_today_pack(db: Session, user_id: int) -> None:
+    today = date.today().isoformat()
+    log = db.scalar(
+        select(VocabDailyLog).where(VocabDailyLog.user_id == user_id, VocabDailyLog.day == today)
+    )
+    if log:
+        log.pack_json = ""
+        log.daily_count = 0
+
+
+def _get_or_create_daily_log(db: Session, user_id: int, today_s: str, bank: str) -> VocabDailyLog:
+    log = db.scalar(
+        select(VocabDailyLog).where(VocabDailyLog.user_id == user_id, VocabDailyLog.day == today_s)
+    )
+    if log:
+        return log
+    log = VocabDailyLog(user_id=user_id, day=today_s, bank=bank)
+    db.add(log)
+    db.flush()
+    return log
+
+
+def _pack_from_log(
+    db: Session, user: User, log: VocabDailyLog, prefs: VocabPrefs
+) -> Optional[List[WordOut]]:
+    """若当日已有与当前设置匹配的固定词单，则原样返回（学习写进度后也不换词）。"""
+    if not (log.pack_json or "").strip():
+        return None
+    if log.bank != prefs.bank or int(log.daily_count or 0) != int(prefs.daily_count):
+        return None
+    try:
+        items = json.loads(log.pack_json)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    if not isinstance(items, list):
+        return None
+    # 空列表表示当日无词可学（词库学完且无到期复习），仍视为有效缓存
+    if not items:
+        return []
+    ids = [int(x["id"]) for x in items if isinstance(x, dict) and x.get("id") is not None]
+    if not ids:
+        return None
+    words = {
+        w.id: w
+        for w in db.scalars(
+            select(VocabWord).where(VocabWord.id.in_(ids), VocabWord.bank == prefs.bank)
+        )
+    }
+    if len(words) != len(ids):
+        return None
+    progs = {
+        p.word_id: p
+        for p in db.scalars(
+            select(VocabProgress).where(
+                VocabProgress.user_id == user.id, VocabProgress.word_id.in_(ids)
+            )
+        )
+    }
+    out: List[WordOut] = []
+    for item in items:
+        wid = int(item["id"])
+        w = words.get(wid)
+        if not w:
+            return None
+        role = str(item.get("role") or "new")
+        out.append(_out(w, progs.get(wid), role=role))
+    return out
+
+
+def _save_today_pack(
+    log: VocabDailyLog, prefs: VocabPrefs, ordered: List[tuple]
+) -> None:
+    log.bank = prefs.bank
+    log.daily_count = prefs.daily_count
+    log.pack_json = json.dumps(
+        [{"id": w.id, "role": role} for w, role in ordered],
+        ensure_ascii=False,
+    )
+    log.new_count = sum(1 for _, r in ordered if r == "new")
+    log.review_count = sum(1 for _, r in ordered if r != "new")
 
 
 @router.get("/course/summary")
@@ -305,19 +391,41 @@ def course_today(
 
 
 def _build_today_pack(user: User, db: Session) -> List[WordOut]:
+    """按所选考试词库 + 每日数量 + 艾宾浩斯到期复习生成今日词单。
+
+    词单在当日固定：学习过程中写入进度不会改换题目；仅换词库/每日数量或跨日才重建。
+    新词按词库课程顺序（sort_order），不随机抽取。
+    """
     prefs = _load_prefs(db, user.id)
     today = date.today().isoformat()
     bank = prefs.bank
     daily_new = prefs.daily_count
+    log = _get_or_create_daily_log(db, user.id, today, bank)
 
-    # 已学进度
+    cached = _pack_from_log(db, user, log, prefs)
+    if cached is not None:
+        return cached
+
+    # 已学进度（仅当前词库）
+    bank_words = list(
+        db.scalars(
+            select(VocabWord)
+            .where(VocabWord.bank == bank)
+            .order_by(VocabWord.sort_order, VocabWord.id)
+        )
+    )
+    bank_ids = [w.id for w in bank_words]
     progs = {
         p.word_id: p
-        for p in db.scalars(select(VocabProgress).where(VocabProgress.user_id == user.id))
-    }
-    bank_words = list(db.scalars(select(VocabWord).where(VocabWord.bank == bank).order_by(VocabWord.id)))
+        for p in db.scalars(
+            select(VocabProgress).where(
+                VocabProgress.user_id == user.id,
+                VocabProgress.word_id.in_(bank_ids) if bank_ids else False,
+            )
+        )
+    } if bank_ids else {}
 
-    # 1) 答错过的优先复习
+    # 1) 艾宾浩斯到期：错题优先，再普通复习
     wrong_due: List[VocabWord] = []
     due: List[VocabWord] = []
     for w in bank_words:
@@ -331,7 +439,7 @@ def _build_today_pack(user: User, db: Session) -> List[WordOut]:
             else:
                 due.append(w)
 
-    # 2) 新词
+    # 2) 新词：该考试词库中尚无进度的词，按课程顺序取 daily_count 个
     new_words = [w for w in bank_words if w.id not in progs][:daily_new]
 
     pack: List[tuple] = []
@@ -342,11 +450,14 @@ def _build_today_pack(user: User, db: Session) -> List[WordOut]:
     for w in new_words:
         pack.append((w, "new"))
 
-    # 复习量控制：最多 daily_new * 2 条复习，避免爆炸；错词不限但截断合理
+    # 复习量控制：最多 daily_new * 2 条复习；错词与到期复习合计截断
     reviews = [(w, r) for w, r in pack if r != "new"]
     news = [(w, r) for w, r in pack if r == "new"]
     reviews = reviews[: max(daily_new * 2, 10)]
     ordered = reviews + news
+
+    _save_today_pack(log, prefs, ordered)
+    db.commit()
 
     out: List[WordOut] = []
     for w, role in ordered:
@@ -406,7 +517,15 @@ def course_quiz(user: User = Depends(get_current_user), db: Session = Depends(ge
     if not pack:
         return []
     prefs = _load_prefs(db, user.id)
-    pool = list(db.scalars(select(VocabWord).where(VocabWord.bank == prefs.bank).limit(200)))
+    # 干扰项仅从同一考试词库抽取（按课程顺序取前缀池，再打乱选项）
+    pool = list(
+        db.scalars(
+            select(VocabWord)
+            .where(VocabWord.bank == prefs.bank)
+            .order_by(VocabWord.sort_order, VocabWord.id)
+            .limit(200)
+        )
+    )
     meanings_pool = [p.meaning for p in pool if p.meaning]
     items: List[QuizItem] = []
     for w in pack:
@@ -600,7 +719,7 @@ def admin_create(
 
 
 def seed_zhongkao_bank(db: Session) -> int:
-    """幂等导入中考 800 词。"""
+    """幂等导入中考 800 词，并按 JSON 顺序写入 sort_order；示范词移出本词库。"""
     candidates = [
         Path(__file__).resolve().parents[1] / "data" / "vocab_zhongkao_800.json",  # app/data
         Path(__file__).resolve().parents[2] / "data" / "vocab_zhongkao_800.json",  # apps/api/data
@@ -608,15 +727,35 @@ def seed_zhongkao_bank(db: Session) -> int:
     path = next((p for p in candidates if p.exists()), None)
     if not path:
         return 0
-    existing = {
-        (w.word.lower(), w.bank or "zhongkao_800")
+    data = json.loads(path.read_text(encoding="utf-8"))
+    official = {str(item["word"]).lower(): idx for idx, item in enumerate(data)}
+
+    # 历史 seed 示范词若混入中考库且不在官方词表，移到 demo，避免打乱考试分类出题
+    moved = 0
+    for w in db.scalars(select(VocabWord).where(VocabWord.bank == "zhongkao_800")):
+        key = (w.word or "").lower()
+        if key and key not in official:
+            w.bank = "demo"
+            moved += 1
+
+    by_word = {
+        (w.word or "").lower(): w
         for w in db.scalars(select(VocabWord).where(VocabWord.bank == "zhongkao_800"))
     }
-    data = json.loads(path.read_text(encoding="utf-8"))
     added = 0
-    for item in data:
-        key = (str(item["word"]).lower(), "zhongkao_800")
-        if key in existing:
+    updated = 0
+    for idx, item in enumerate(data):
+        key = str(item["word"]).lower()
+        row = by_word.get(key)
+        if row:
+            if int(row.sort_order or 0) != idx or (row.frequency or "") != (item.get("frequency") or ""):
+                row.sort_order = idx
+                row.frequency = item.get("frequency") or row.frequency or ""
+                row.scene = item.get("scene") or row.scene or ""
+                row.pos = item.get("pos") or row.pos or ""
+                if item.get("meanings") and not (row.meanings_json or "").strip():
+                    row.meanings_json = json.dumps(item.get("meanings") or [], ensure_ascii=False)
+                updated += 1
             continue
         morph = morph_for(item["word"])
         db.add(
@@ -627,6 +766,7 @@ def seed_zhongkao_bank(db: Session) -> int:
                 example=item.get("example") or "",
                 level=item.get("level") or "A2",
                 bank="zhongkao_800",
+                sort_order=idx,
                 pos=item.get("pos") or "",
                 scene=item.get("scene") or "",
                 frequency=item.get("frequency") or "",
@@ -635,8 +775,7 @@ def seed_zhongkao_bank(db: Session) -> int:
                 image_key=(item["word"] or "").lower(),
             )
         )
-        existing.add(key)
         added += 1
-    if added:
+    if added or updated or moved:
         db.commit()
     return added

@@ -143,7 +143,7 @@ async function savePrefs() {
     })
     Object.assign(prefs, p)
     showMorph.value = p.show_morph
-    tip.value = '设置已保存，词单已按艾宾浩斯刷新'
+    tip.value = '设置已保存：已按考试词库、每日数量与艾宾浩斯复习刷新今日词单'
     summary.value = await api('/vocab/course/summary')
     words.value = await api('/vocab/course/today')
     idx.value = 0
