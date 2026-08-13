@@ -21,6 +21,9 @@ declare global {
   interface Window {
     eduaiDesktop?: EduaiDesktopApi
   }
+  interface ImportMetaEnv {
+    readonly VITE_APP_VERSION?: string
+  }
 }
 
 export {}

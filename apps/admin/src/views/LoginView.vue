@@ -5,6 +5,7 @@ import { ElMessage } from 'element-plus'
 import { fetchMe, login, setToken } from '../lib/api'
 import { webBaseUrl } from '../lib/webEntry'
 import DesktopUpdateButton from '../components/DesktopUpdateButton.vue'
+import AppVersionBadge from '../components/AppVersionBadge.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -63,7 +64,7 @@ onMounted(() => {
 <template>
   <div class="login">
     <form class="card" @submit.prevent="submit">
-      <h1 class="brand-serif">eduAI</h1>
+      <h1 class="brand-serif">eduAI <AppVersionBadge /></h1>
       <p>系统管理后台登录</p>
       <el-input v-model="form.email" placeholder="邮箱" size="large" />
       <el-input v-model="form.password" type="password" show-password placeholder="密码" size="large" />

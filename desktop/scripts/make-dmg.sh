@@ -60,3 +60,24 @@ rm -f "$OUT"
 hdiutil create -volname "eduAI 安装" -srcfolder "$STAGE" -ov -format UDZO "$OUT"
 echo "✓ DMG: $OUT"
 ls -lh "$OUT"
+
+echo "==> 生成 PKG 安装包（便于隔空投送 / 系统安装器）"
+PKG_ROOT="$(mktemp -d)/pkgroot"
+PKG_SCRIPTS="$(mktemp -d)/pkgscripts"
+mkdir -p "$PKG_ROOT" "$PKG_SCRIPTS"
+ditto "$APP_SRC" "$PKG_ROOT/eduAI.app"
+cp "$DESKTOP/scripts/pkg-scripts/postinstall" "$PKG_SCRIPTS/postinstall"
+chmod 755 "$PKG_SCRIPTS/postinstall"
+OUT_PKG="$DESKTOP/dist/eduAI-${VERSION}-${ARCH_TAG}.pkg"
+rm -f "$OUT_PKG"
+pkgbuild \
+  --root "$PKG_ROOT" \
+  --install-location /Applications \
+  --scripts "$PKG_SCRIPTS" \
+  --identifier ai.edu.desktop \
+  --version "$VERSION" \
+  --ownership recommended \
+  "$OUT_PKG"
+echo "✓ PKG: $OUT_PKG"
+ls -lh "$OUT_PKG"
+rm -rf "$STAGE" "$PKG_ROOT" "$PKG_SCRIPTS" 2>/dev/null || true

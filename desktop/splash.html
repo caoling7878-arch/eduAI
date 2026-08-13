@@ -55,6 +55,13 @@
         color: var(--muted);
         font-size: 15px;
       }
+      .ver {
+        margin: 6px 0 10px;
+        font-size: 13px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        color: rgba(244, 250, 248, 0.92);
+      }
       .bar {
         width: min(280px, 70vw);
         height: 4px;
@@ -86,6 +93,7 @@
       <div>
         <div class="mark" aria-hidden="true">e</div>
         <h1>eduAI</h1>
+        <p id="app-ver" class="ver"></p>
         <p>正在启动本地服务，请稍候…</p>
         <div class="bar"><i></i></div>
       </div>

@@ -31,6 +31,7 @@ import {
 import { fetchMe, setToken, type User as UserT } from '../lib/api'
 import { webBaseUrl } from '../lib/webEntry'
 import DesktopUpdateButton from '../components/DesktopUpdateButton.vue'
+import AppVersionBadge from '../components/AppVersionBadge.vue'
 
 type MenuItem = { path: string; label: string; icon: unknown }
 type MenuGroup = { title: string; items: MenuItem[]; adminOnly?: boolean }
@@ -197,7 +198,7 @@ function logout() {
   <div class="shell">
     <aside class="side">
       <div class="brand">
-        <div class="logo brand-serif">eduAI</div>
+        <div class="logo brand-serif">eduAI <AppVersionBadge /></div>
         <p class="logo-sub">{{ isAdmin ? '系统管理后台' : '教师工作台' }}</p>
       </div>
 

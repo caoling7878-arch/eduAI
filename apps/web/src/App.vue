@@ -5,6 +5,7 @@ import { openAdminConsole } from './lib/adminEntry'
 import { fetchUnreadCount, getToken } from './lib/api'
 import { useAuth } from './stores/auth'
 import DesktopUpdateButton from './components/DesktopUpdateButton.vue'
+import AppVersionBadge from './components/AppVersionBadge.vue'
 
 const auth = useAuth()
 const route = useRoute()
@@ -112,6 +113,7 @@ onMounted(async () => {
       </button>
       <RouterLink to="/" class="brand-lockup">
         <span class="name">eduAI</span>
+        <AppVersionBadge />
         <span class="mark">智慧教育云</span>
       </RouterLink>
       <div class="portal-title">学习门户</div>
@@ -185,6 +187,7 @@ onMounted(async () => {
     <header class="site-nav" :class="{ 'site-nav--home': isHome && !auth.isLoggedIn.value }">
       <RouterLink to="/" class="brand-lockup">
         <span class="name">eduAI</span>
+        <AppVersionBadge />
         <span class="mark">智慧教育云</span>
       </RouterLink>
       <nav class="nav-links">

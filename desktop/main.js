@@ -141,6 +141,20 @@ function waitForHealth(timeoutMs = 90000) {
   })
 }
 
+function appTitle() {
+  return `eduAI v${app.getVersion()}`
+}
+
+function showAbout() {
+  const win = mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined
+  dialog.showMessageBox(win, {
+    type: 'info',
+    title: '关于 eduAI',
+    message: appTitle(),
+    detail: '智慧教育云桌面版\nWindows / macOS 通用',
+  })
+}
+
 function createWindow() {
   const icon = nativeImage.createFromPath(path.join(__dirname, 'build', 'icon.png'))
   mainWindow = new BrowserWindow({
@@ -148,7 +162,7 @@ function createWindow() {
     height: 840,
     minWidth: 960,
     minHeight: 640,
-    title: 'eduAI',
+    title: appTitle(),
     icon,
     backgroundColor: '#0b3d36',
     webPreferences: {
@@ -160,7 +174,16 @@ function createWindow() {
   })
 
   mainWindow.once('ready-to-show', () => mainWindow?.show())
-  mainWindow.loadFile(path.join(__dirname, 'splash.html'))
+  mainWindow.on('page-title-updated', (e) => {
+    e.preventDefault()
+    mainWindow?.setTitle(appTitle())
+  })
+  mainWindow.loadFile(path.join(__dirname, 'splash.html')).then(() => {
+    const ver = JSON.stringify(`v${app.getVersion()}`)
+    mainWindow?.webContents.executeJavaScript(
+      `var el=document.getElementById('app-ver'); if(el) el.textContent=${ver};`,
+    )
+  })
 
   mainWindow.on('close', (e) => {
     if (!quitting && process.platform === 'darwin') {
@@ -182,7 +205,7 @@ function createTray() {
     image = image.resize({ width: 18, height: 18 })
   }
   tray = new Tray(image.isEmpty() ? nativeImage.createEmpty() : image)
-  tray.setToolTip('eduAI')
+  tray.setToolTip(appTitle())
   const menu = Menu.buildFromTemplate([
     {
       label: '打开 eduAI',
@@ -231,6 +254,10 @@ function buildAppMenu() {
             label: app.name,
             submenu: [
               { role: 'about' },
+              {
+                label: `版本 ${app.getVersion()}`,
+                enabled: false,
+              },
               { type: 'separator' },
               { role: 'hide' },
               { role: 'hideOthers' },
@@ -274,6 +301,10 @@ function buildAppMenu() {
           click: () => {
             promptCheckOrUpdate()
           },
+        },
+        {
+          label: '关于 eduAI',
+          click: () => showAbout(),
         },
         { type: 'separator' },
         {
@@ -320,12 +351,23 @@ if (!gotLock) {
   })
 
   app.whenReady().then(async () => {
+    app.setAboutPanelOptions({
+      applicationName: 'eduAI',
+      applicationVersion: app.getVersion(),
+      version: app.getVersion(),
+      copyright: 'Copyright © eduAI',
+    })
     buildAppMenu()
     createTray()
     createWindow()
     startServer()
     try {
       await waitForHealth()
+      try {
+        await mainWindow?.webContents.session.clearCache()
+      } catch {
+        /* ignore */
+      }
       await mainWindow?.loadURL(APP_URL)
       setTimeout(() => {
         checkForUpdate(false).catch(() => {})
