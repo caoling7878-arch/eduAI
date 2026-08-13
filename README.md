@@ -23,7 +23,8 @@
 
 1. 安装完成后点击 **eduAI** 图标启动  
 2. 学员端：窗口内首页；管理端：菜单「帮助 → 管理端」或访问 `/admin/`  
-3. 演示账号：`admin@edu.ai` / `admin123` · `teacher@edu.ai` / `teacher123` · `student@edu.ai` / `student123`
+3. 演示账号：`admin@edu.ai` / `admin123` · `teacher@edu.ai` / `teacher123` · `student@edu.ai` / `student123`  
+4. **检查更新**：桌面版顶栏有「检查更新」按钮（菜单「帮助 → 检查更新」同样可用）。GitHub 发布新版本后，Windows / macOS 均可一键下载并自动安装重启。
 
 **macOS 提示「已损坏，无法打开」时**（从浏览器下载的未公证安装包常见）：在终端执行  
 `xattr -cr /Applications/eduAI.app`  

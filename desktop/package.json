@@ -1,7 +1,7 @@
 {
   "name": "eduai-desktop",
   "productName": "eduAI",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "description": "eduAI 智慧教育云 — 本地桌面版",
   "main": "main.js",
   "author": "eduAI",
@@ -25,6 +25,7 @@
     "files": [
       "main.js",
       "preload.js",
+      "updater.js",
       "splash.html",
       "package.json",
       "build/icon.png"

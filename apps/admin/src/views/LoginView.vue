@@ -4,6 +4,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { fetchMe, login, setToken } from '../lib/api'
 import { webBaseUrl } from '../lib/webEntry'
+import DesktopUpdateButton from '../components/DesktopUpdateButton.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -72,6 +73,9 @@ onMounted(() => {
       <small>系统管理员：admin@edu.ai / admin123 · 教师：teacher@edu.ai / teacher123</small>
       <small class="hint">学员端登录页：{{ webBaseUrl() }}/auth（登录后不会自动跳转至此）。</small>
       <a class="back" :href="`${webBaseUrl()}/`">← 返回学员端首页</a>
+      <div class="upd-wrap">
+        <DesktopUpdateButton />
+      </div>
     </form>
   </div>
 </template>
@@ -116,5 +120,9 @@ small {
 .hint {
   display: block;
   line-height: 1.45;
+}
+.upd-wrap {
+  display: flex;
+  justify-content: center;
 }
 </style>

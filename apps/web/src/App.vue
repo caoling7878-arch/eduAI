@@ -4,6 +4,7 @@ import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import { openAdminConsole } from './lib/adminEntry'
 import { fetchUnreadCount, getToken } from './lib/api'
 import { useAuth } from './stores/auth'
+import DesktopUpdateButton from './components/DesktopUpdateButton.vue'
 
 const auth = useAuth()
 const route = useRoute()
@@ -115,6 +116,7 @@ onMounted(async () => {
       </RouterLink>
       <div class="portal-title">学习门户</div>
       <div class="portal-user">
+        <DesktopUpdateButton />
         <button
           v-if="auth.isStaff.value"
           type="button"
@@ -186,6 +188,7 @@ onMounted(async () => {
         <span class="mark">智慧教育云</span>
       </RouterLink>
       <nav class="nav-links">
+        <DesktopUpdateButton />
         <RouterLink to="/classroom">AI 课堂</RouterLink>
         <RouterLink to="/ai">AI 学伴</RouterLink>
         <RouterLink to="/catalog">课程中心</RouterLink>

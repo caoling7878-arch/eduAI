@@ -3,6 +3,7 @@ const { spawn } = require('child_process')
 const fs = require('fs')
 const http = require('http')
 const path = require('path')
+const { setupUpdater, checkForUpdate, promptCheckOrUpdate } = require('./updater')
 
 const PORT = Number(process.env.EDUAI_PORT || 18765)
 const HOST = process.env.EDUAI_HOST || '127.0.0.1'
@@ -192,6 +193,12 @@ function createTray() {
       },
     },
     {
+      label: '检查更新',
+      click: () => {
+        promptCheckOrUpdate()
+      },
+    },
+    {
       label: '打开学员端（浏览器）',
       click: () => shell.openExternal(APP_URL),
     },
@@ -263,6 +270,13 @@ function buildAppMenu() {
       label: '帮助',
       submenu: [
         {
+          label: '检查更新',
+          click: () => {
+            promptCheckOrUpdate()
+          },
+        },
+        { type: 'separator' },
+        {
           label: '学员端',
           click: () => shell.openExternal(APP_URL),
         },
@@ -285,6 +299,14 @@ ipcMain.handle('open-external', (_e, url) => {
   if (typeof url === 'string') shell.openExternal(url)
 })
 
+setupUpdater({
+  getWindow: () => mainWindow,
+  stopServer,
+  setQuitting: (v) => {
+    quitting = v
+  },
+})
+
 const gotLock = app.requestSingleInstanceLock()
 if (!gotLock) {
   app.quit()
@@ -305,6 +327,9 @@ if (!gotLock) {
     try {
       await waitForHealth()
       await mainWindow?.loadURL(APP_URL)
+      setTimeout(() => {
+        checkForUpdate(false).catch(() => {})
+      }, 4000)
     } catch (err) {
       const logFile = path.join(app.getPath('userData'), 'server.log')
       dialog.showErrorBox(

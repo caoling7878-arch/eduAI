@@ -30,6 +30,7 @@ import {
 } from '@element-plus/icons-vue'
 import { fetchMe, setToken, type User as UserT } from '../lib/api'
 import { webBaseUrl } from '../lib/webEntry'
+import DesktopUpdateButton from '../components/DesktopUpdateButton.vue'
 
 type MenuItem = { path: string; label: string; icon: unknown }
 type MenuGroup = { title: string; items: MenuItem[]; adminOnly?: boolean }
@@ -229,6 +230,7 @@ function logout() {
           <h1 class="brand-serif">{{ pageTitle }}</h1>
         </div>
         <div class="top-right">
+          <DesktopUpdateButton />
           <span class="role-tag">{{ user?.display_name }} · {{ user?.role }}</span>
           <el-button text type="primary" @click="logout">退出</el-button>
         </div>
