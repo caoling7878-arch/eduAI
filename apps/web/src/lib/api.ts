@@ -81,6 +81,8 @@ export interface ProgressSummary {
   user: User
   courses: CourseSummary[]
   items: ProgressItem[]
+  vocab_streak_days?: number
+  vocab_streak_badge?: boolean
 }
 
 export function register(body: {

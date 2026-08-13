@@ -137,6 +137,116 @@ export const login = (email: string, password: string) =>
 
 export const fetchMe = () => api<User>('/auth/me')
 export const fetchDashboard = () => api<Dashboard>('/analytics/dashboard')
+
+export type TeacherHub = {
+  teacher_name: string
+  summary: {
+    class_count?: number
+    student_count?: number
+    course_count?: number
+    grade_pending?: number
+    vocab_done_today?: number
+    vocab_total_today?: number
+    vocab_rate?: number
+    avg_progress_completed?: number
+    avg_score_rate?: number
+    wrong_open_total?: number
+  }
+  courses: Array<{
+    id: number
+    title: string
+    status: string
+    summary: string
+    class_count: number
+    class_names: string[]
+    student_count: number
+  }>
+  classes: Array<{
+    id: number
+    name: string
+    course_id?: number | null
+    course_title: string
+    student_count: number
+    progress_completed_avg: number
+    avg_score_rate: number
+    pending_grades: number
+    vocab_today_done: number
+    vocab_today_total: number
+    vocab_rate: number
+  }>
+  students: Array<{
+    user_id: number
+    display_name: string
+    class_name: string
+    progress_completed: number
+    avg_score_rate: number
+    wrong_open: number
+    pending_grades: number
+    vocab_today: boolean
+    streak_days: number
+  }>
+  vocab_checkins: Array<{
+    user_id: number
+    display_name: string
+    class_name: string
+    completed: boolean
+    stars_earned: number
+    streak_days: number
+    bank: string
+  }>
+  weak_points: Array<{ knowledge_point: string; wrong_count: number }>
+  grade_pending: number
+}
+
+export const fetchTeacherHub = () => api<TeacherHub>('/teacher/hub')
+
+export type StudentHistory = {
+  user_id: number
+  display_name: string
+  email: string
+  class_names: string[]
+  summary: Record<string, number>
+  progress: Array<{
+    course_id: string
+    item_id: string
+    status: string
+    score: number
+    updated_at?: string | null
+  }>
+  submissions: Array<{
+    id: number
+    paper_id: number
+    paper_title: string
+    score: number
+    total: number
+    rate: number
+    created_at?: string | null
+  }>
+  vocab_logs: Array<{
+    day: string
+    bank: string
+    completed: boolean
+    new_count: number
+    review_count: number
+    quiz_total: number
+    quiz_correct: number
+    stars_earned: number
+  }>
+  wrong_items: Array<{
+    id: number
+    knowledge_points: string
+    source: string
+    mastered: boolean
+    user_answer: string
+    correct_answer: string
+    created_at?: string | null
+  }>
+  checkins: Array<{ day: string }>
+}
+
+export const fetchStudentHistory = (studentId: number) =>
+  api<StudentHistory>(`/teacher/students/${studentId}/history`)
+
 export const fetchStudentOps = () => api<StudentOps[]>('/analytics/students')
 export const fetchUsers = (q = '', role = '') =>
   api<User[]>(`/users?q=${encodeURIComponent(q)}&role=${encodeURIComponent(role)}`)

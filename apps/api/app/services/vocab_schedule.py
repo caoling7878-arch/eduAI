@@ -43,5 +43,23 @@ def schedule_wrong(today: date | None = None) -> Tuple[int, int, str]:
 
 
 def star_for_streak(streak_days: int) -> int:
-    """连续打卡 ≥10 天每天 2 星，否则 1 星。断签后由调用方把 streak 置 1。"""
-    return 2 if streak_days >= 10 else 1
+    """第 1–10 天每天 1 星；从第 11 天起每天 2 星。断签后 streak 从 1 再计。"""
+    return 2 if streak_days >= 11 else 1
+
+
+STREAK_BADGE_DAYS = 10
+
+
+def has_streak_badge(streak_days: int) -> bool:
+    """连续打卡满 10 天点亮徽章；断签后取消。"""
+    return int(streak_days or 0) >= STREAK_BADGE_DAYS
+
+
+def effective_streak(last_checkin_date: str, streak_days: int, today: date | None = None) -> int:
+    """若昨天/今天未打卡，视为断签，连续天数归零。"""
+    base = today or date.today()
+    today_s = base.isoformat()
+    yesterday = (base - timedelta(days=1)).isoformat()
+    if last_checkin_date in (today_s, yesterday):
+        return int(streak_days or 0)
+    return 0

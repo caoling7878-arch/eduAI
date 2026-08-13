@@ -3,7 +3,7 @@ from __future__ import annotations
 import csv
 import io
 from collections import defaultdict
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -142,7 +142,14 @@ def _class_report(db: Session, class_id: int) -> ClassReport:
     c = db.get(ClassRoom, class_id)
     if not c:
         raise HTTPException(status_code=404, detail="班级不存在")
-    member_ids = list(db.scalars(select(ClassMember.user_id).where(ClassMember.class_id == class_id)))
+    # 仅学员，排除教师等非学生成员
+    member_ids = list(
+        db.scalars(
+            select(ClassMember.user_id)
+            .join(User, User.id == ClassMember.user_id)
+            .where(ClassMember.class_id == class_id, User.role == "student")
+        )
+    )
     if not member_ids:
         return ClassReport(
             class_id=c.id,
@@ -246,18 +253,28 @@ def my_report(user: User = Depends(get_current_user), db: Session = Depends(get_
 @router.get("/classes/{class_id}", response_model=ClassReport)
 def class_report(
     class_id: int,
-    _: User = Depends(require_staff),
+    user: User = Depends(require_staff),
     db: Session = Depends(get_db),
 ) -> ClassReport:
+    c = db.get(ClassRoom, class_id)
+    if not c:
+        raise HTTPException(status_code=404, detail="班级不存在")
+    if user.role == "teacher" and c.teacher_id != user.id:
+        raise HTTPException(status_code=403, detail="只能查看自己班级的学情")
     return _class_report(db, class_id)
 
 
 @router.get("/classes/{class_id}/export")
 def export_class_report(
     class_id: int,
-    _: User = Depends(require_staff),
+    user: User = Depends(require_staff),
     db: Session = Depends(get_db),
 ) -> StreamingResponse:
+    c = db.get(ClassRoom, class_id)
+    if not c:
+        raise HTTPException(status_code=404, detail="班级不存在")
+    if user.role == "teacher" and c.teacher_id != user.id:
+        raise HTTPException(status_code=403, detail="只能导出自己班级的学情")
     detail = _class_report(db, class_id)
     rows: List[List[str]] = [
         ["班级", detail.class_name],
@@ -286,32 +303,70 @@ def export_class_report(
     return _csv_response(f"class_{class_id}_report.csv", rows)
 
 
+def _teacher_student_ids(db: Session, teacher_id: int) -> List[int]:
+    class_ids = list(db.scalars(select(ClassRoom.id).where(ClassRoom.teacher_id == teacher_id)))
+    if not class_ids:
+        return []
+    return list(
+        dict.fromkeys(
+            int(uid)
+            for uid in db.scalars(
+                select(ClassMember.user_id)
+                .join(User, User.id == ClassMember.user_id)
+                .where(ClassMember.class_id.in_(class_ids), User.role == "student")
+            )
+        )
+    )
+
+
 @router.get("/overview")
-def overview(_: User = Depends(require_staff), db: Session = Depends(get_db)) -> dict:
-    """管理端学情总览。"""
+def overview(user: User = Depends(require_staff), db: Session = Depends(get_db)) -> dict:
+    """管理端学情总览。教师仅看自己班级学员。"""
+    student_ids: Optional[List[int]] = None
+    if user.role == "teacher":
+        student_ids = _teacher_student_ids(db, user.id)
+
+    wrong_q = select(WrongItem).where(WrongItem.mastered.is_(False))
+    if student_ids is not None:
+        if not student_ids:
+            return {
+                "students": 0,
+                "submissions": 0,
+                "wrong_open": 0,
+                "pending_grades": 0,
+                "weak_points": [],
+                "scope": "my_classes",
+            }
+        wrong_q = wrong_q.where(WrongItem.user_id.in_(student_ids))
+
     kp: Dict[str, int] = defaultdict(int)
-    for w in db.scalars(select(WrongItem).where(WrongItem.mastered.is_(False))):
+    for w in db.scalars(wrong_q):
         key = (w.knowledge_points or "未标注").split(",")[0].strip() or "未标注"
         kp[key] += 1
-    pending_grades = int(
-        db.scalar(
-            select(func.count())
-            .select_from(GradeTask)
-            .where(GradeTask.status.in_(["pending", "ai_scored"]))
-        )
-        or 0
+
+    grade_q = select(func.count()).select_from(GradeTask).where(
+        GradeTask.status.in_(["pending", "ai_scored"])
     )
+    sub_q = select(func.count()).select_from(Submission)
+    student_count_q = select(func.count()).select_from(User).where(User.role == "student")
+    wrong_open_q = select(func.count()).select_from(WrongItem).where(WrongItem.mastered.is_(False))
+
+    if student_ids is not None:
+        grade_q = grade_q.where(GradeTask.user_id.in_(student_ids))
+        sub_q = sub_q.where(Submission.user_id.in_(student_ids))
+        student_count_q = select(func.count()).select_from(User).where(User.id.in_(student_ids))
+        wrong_open_q = wrong_open_q.where(WrongItem.user_id.in_(student_ids))
+
     return {
-        "students": int(db.scalar(select(func.count()).select_from(User).where(User.role == "student")) or 0),
-        "submissions": int(db.scalar(select(func.count()).select_from(Submission)) or 0),
-        "wrong_open": int(
-            db.scalar(select(func.count()).select_from(WrongItem).where(WrongItem.mastered.is_(False))) or 0
-        ),
-        "pending_grades": pending_grades,
+        "students": int(db.scalar(student_count_q) or 0),
+        "submissions": int(db.scalar(sub_q) or 0),
+        "wrong_open": int(db.scalar(wrong_open_q) or 0),
+        "pending_grades": int(db.scalar(grade_q) or 0),
         "weak_points": [
             {"knowledge_point": k, "wrong_count": v}
             for k, v in sorted(kp.items(), key=lambda x: -x[1])[:10]
         ],
+        "scope": "my_classes" if user.role == "teacher" else "platform",
     }
 
 

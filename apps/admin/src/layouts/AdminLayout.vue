@@ -45,44 +45,67 @@ const groups = computed(() => {
 
   if (!isAdmin.value) {
     list.push({
-      title: '总览',
+      title: '教学总览',
       items: [
         { path: '/hub', label: '教师工作台', icon: Monitor },
-        { path: '/', label: '数据概览', icon: DataBoard },
+        { path: '/classes', label: '班级管理', icon: OfficeBuilding },
+        { path: '/courses', label: '课程板块', icon: Reading },
+        { path: '/geometry', label: '几何课页', icon: Compass },
       ],
     })
-  } else {
     list.push({
-      title: '总览',
-      items: [{ path: '/', label: '仪表盘', icon: DataBoard }],
-    })
-  }
-
-  if (isAdmin.value) {
-    list.push({
-      title: '学员运营',
+      title: '学情与打卡',
       items: [
-        { path: '/students', label: '学员管理', icon: UserFilled },
-        { path: '/orders', label: '订单会员', icon: ShoppingCart },
-        { path: '/billing', label: '租户用量包', icon: Wallet },
-        { path: '/reports', label: '学情报表', icon: TrendCharts },
+        { path: '/reports', label: '学情分析', icon: TrendCharts },
         { path: '/feedback', label: '反馈工单', icon: ChatDotRound },
       ],
     })
+    list.push({
+      title: '批改与测评',
+      items: [
+        { path: '/grading', label: '作业批改', icon: EditPen },
+        { path: '/papers', label: '试卷管理', icon: Notebook },
+        { path: '/questions', label: '题库管理', icon: Document },
+        { path: '/workflows', label: '工作流', icon: List },
+      ],
+    })
+    list.push({
+      title: 'AI 备课',
+      items: [
+        { path: '/ppt', label: '生成 PPT', icon: PictureFilled },
+        { path: '/knowledge', label: '知识库备课', icon: Collection },
+        { path: '/assistants', label: 'AI 教学助手', icon: Cpu },
+        { path: '/templates', label: '模板库', icon: Files },
+        { path: '/ebooks', label: '电子书', icon: Reading },
+        { path: '/articles', label: '每日美文', icon: Notebook },
+        { path: '/announcements', label: '公告', icon: Bell },
+      ],
+    })
+    return list
   }
+
+  list.push({
+    title: '总览',
+    items: [{ path: '/', label: '仪表盘', icon: DataBoard }],
+  })
+
+  list.push({
+    title: '学员运营',
+    items: [
+      { path: '/students', label: '学员管理', icon: UserFilled },
+      { path: '/orders', label: '订单会员', icon: ShoppingCart },
+      { path: '/billing', label: '租户用量包', icon: Wallet },
+      { path: '/reports', label: '学情报表', icon: TrendCharts },
+      { path: '/feedback', label: '反馈工单', icon: ChatDotRound },
+    ],
+  })
 
   list.push({
     title: '教学组织',
     items: [
-      ...(isAdmin.value ? [{ path: '/teachers', label: '教师管理', icon: Avatar }] : []),
+      { path: '/teachers', label: '教师管理', icon: Avatar },
       { path: '/classes', label: '班级管理', icon: OfficeBuilding },
       { path: '/courses', label: '课程管理', icon: Reading },
-      ...(!isAdmin.value
-        ? [
-            { path: '/reports', label: '学情报表', icon: TrendCharts },
-            { path: '/feedback', label: '反馈工单', icon: ChatDotRound },
-          ]
-        : []),
     ],
   })
 
@@ -103,32 +126,24 @@ const groups = computed(() => {
 
   list.push({
     title: 'AI 中枢',
-    items: isAdmin.value
-      ? [
-          { path: '/assistants', label: 'AI 教学助手', icon: Cpu },
-          { path: '/ai-config', label: 'AI Token / API Key', icon: Key },
-          { path: '/knowledge', label: '知识库', icon: Collection },
-          { path: '/ppt', label: 'PPT 生成', icon: PictureFilled },
-          { path: '/api-tokens', label: '开放 API', icon: Link },
-          { path: '/datasets', label: '样本回流', icon: Box },
-        ]
-      : [
-          { path: '/assistants', label: 'AI 教学助手', icon: Cpu },
-          { path: '/knowledge', label: '知识库', icon: Collection },
-          { path: '/ppt', label: 'PPT 生成', icon: PictureFilled },
-        ],
+    items: [
+      { path: '/assistants', label: 'AI 教学助手', icon: Cpu },
+      { path: '/ai-config', label: 'AI Token / API Key', icon: Key },
+      { path: '/knowledge', label: '知识库', icon: Collection },
+      { path: '/ppt', label: 'PPT 生成', icon: PictureFilled },
+      { path: '/api-tokens', label: '开放 API', icon: Link },
+      { path: '/datasets', label: '样本回流', icon: Box },
+    ],
   })
 
-  if (isAdmin.value) {
-    list.push({
-      title: '系统',
-      items: [
-        { path: '/users', label: '账号管理', icon: User },
-        { path: '/audits', label: '审计日志', icon: List },
-        { path: '/settings', label: '系统设置', icon: Setting },
-      ],
-    })
-  }
+  list.push({
+    title: '系统',
+    items: [
+      { path: '/users', label: '账号管理', icon: User },
+      { path: '/audits', label: '审计日志', icon: List },
+      { path: '/settings', label: '系统设置', icon: Setting },
+    ],
+  })
 
   return list
 })

@@ -17,7 +17,7 @@
 | 平台 | 安装包 | 安装方式 |
 |------|--------|----------|
 | Windows | `install.exe` | 双击安装，自动创建桌面与开始菜单快捷方式 |
-| macOS | `eduAI-*.dmg` 或 `eduAI-*.pkg` | **DMG**：打开后双击「① 双击安装 eduAI.command」（自动清除隔离标记）。**PKG**：双击用系统安装器安装。请勿把 `.app` 直接拖进「应用程序」 |
+| macOS | `eduAI-*.dmg` | 打开 DMG，**推荐双击「安装 eduAI.command」**（自动清除隔离标记）；也可拖入「应用程序」 |
 
 **使用**
 
@@ -25,12 +25,9 @@
 2. 学员端：窗口内首页；管理端：菜单「帮助 → 管理端」或访问 `/admin/`  
 3. 演示账号：`admin@edu.ai` / `admin123` · `teacher@edu.ai` / `teacher123` · `student@edu.ai` / `student123`
 
-**macOS 提示「已损坏，无法打开」**  
-这是 Gatekeeper 对「未公证、从网络下载」应用的拦截（不是文件真坏了）。请任选其一：
-
-1. 打开 DMG，双击 **「① 双击安装 eduAI.command」**（若被拦截：Control-点击 →「打开」）  
-2. 或改用 Release 里的 **`eduAI-*.pkg`** 安装  
-3. 或若已拖装失败，在「终端」执行：`xattr -cr /Applications/eduAI.app` 后重新打开
+**macOS 提示「已损坏，无法打开」时**（从浏览器下载的未公证安装包常见）：在终端执行  
+`xattr -cr /Applications/eduAI.app`  
+然后重新打开应用；或使用 DMG 内的「安装 eduAI.command」一键安装。
 
 **开发者如何打安装包**
 

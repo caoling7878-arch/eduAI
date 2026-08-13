@@ -15,7 +15,7 @@ type Segment = {
   color: string
 }
 
-type Meaning = { pos: string; text: string }
+type Meaning = { pos: string; text: string; example?: string; example_cn?: string; source?: string }
 
 type Word = {
   id: number
@@ -60,6 +60,9 @@ type Summary = {
   stars_total: number
   stars_month: number
   streak_days: number
+  streak_badge?: boolean
+  stars_per_day?: number
+  today_stars?: number
   stars_to_member: number
   today_completed: boolean
   need_reminder: boolean
@@ -127,6 +130,7 @@ async function load() {
     idx.value = 0
     flipped.value = false
     phase.value = summary.value?.today_completed ? 'done' : 'study'
+    syncStreak(summary.value)
     await auth.track('love-words', 'course', 'started', { title: '我爱背单词' }, summary.value?.percent || 5)
   } catch (e) {
     loadError.value = e instanceof Error ? e.message : '加载失败，请稍后重试'
@@ -145,6 +149,7 @@ async function savePrefs() {
     showMorph.value = p.show_morph
     tip.value = '设置已保存：已按考试词库、每日数量与艾宾浩斯复习刷新今日词单'
     summary.value = await api('/vocab/course/summary')
+    syncStreak(summary.value)
     words.value = await api('/vocab/course/today')
     idx.value = 0
     phase.value = 'study'
@@ -164,23 +169,35 @@ async function mark(status: string) {
   next()
 }
 
+function senseExamples(w: Word | undefined) {
+  if (!w) return [] as string[]
+  const fromMeanings = (w.meanings || []).map((m) => (m.example || '').trim()).filter(Boolean)
+  if (fromMeanings.length) return fromMeanings
+  const fallback = (w.example || '').trim()
+  return fallback ? [fallback] : []
+}
+
+function syncStreak(s: Summary | null) {
+  if (!s) return
+  auth.applyVocabStreak(s.streak_days || 0, !!s.streak_badge)
+}
+
 async function speak() {
   const w = current()
   if (!w || speaking.value) return
   speaking.value = true
   speakTip.value = ''
   try {
-    const example = (w.example || '').trim()
-    // 正面读单词；翻到释义/例句面后读例句
+    const examples = senseExamples(w)
     let result
-    if (flipped.value && example) {
-      result = await speakEnglish(example, {
+    if (flipped.value && examples.length) {
+      result = await speakEnglish(examples.join('. '), {
         gender: ttsGender.value,
         lang: 'en',
         mode: 'sentence',
       })
     } else {
-      if (flipped.value && !example) speakTip.value = '暂无例句，已朗读单词'
+      if (flipped.value && !examples.length) speakTip.value = '暂无例句，已朗读单词'
       result = await speakWord(w.word, { gender: ttsGender.value })
     }
     if (result.fallback) {
@@ -231,6 +248,7 @@ async function submitQuiz() {
       body: JSON.stringify({ answers: payload }),
     })
     summary.value = await api('/vocab/course/summary')
+    syncStreak(summary.value)
     phase.value = 'done'
     if (quizResult.value?.all_correct) {
       await auth.track('love-words', 'course', 'completed', { title: '我爱背单词' }, summary.value?.percent || 10)
@@ -245,6 +263,7 @@ async function redeem() {
     const r = await api<{ message: string }>('/vocab/course/redeem', { method: 'POST' })
     tip.value = r.message
     summary.value = await api('/vocab/course/summary')
+    syncStreak(summary.value)
   } catch (e) {
     tip.value = e instanceof Error ? e.message : '兑换失败'
   }
@@ -280,7 +299,14 @@ onMounted(load)
       <div><b>{{ summary.learned }}/{{ summary.bank_total }}</b><span>{{ summary.bank_name }}</span></div>
       <div><b>{{ summary.days_needed }}</b><span>预计总天数</span></div>
       <div><b>{{ summary.days_left }}</b><span>剩余天数</span></div>
-      <div><b>{{ summary.streak_days }}</b><span>连续打卡</span></div>
+      <div>
+        <b>
+          {{ summary.streak_days }}
+          <i v-if="summary.streak_badge" class="mini-badge" title="连续打卡徽章">连</i>
+        </b>
+        <span>连续打卡</span>
+      </div>
+      <div><b>{{ summary.today_completed ? (summary.today_stars || summary.stars_per_day || 1) : (summary.stars_per_day || 1) }}★</b><span>{{ summary.today_completed ? '今日已得' : '今日可得' }}</span></div>
       <div><b>{{ summary.stars_total }}★</b><span>累计星星</span></div>
       <div><b>{{ summary.stars_month }}/30</b><span>本月兑会员</span></div>
     </section>
@@ -377,12 +403,17 @@ onMounted(load)
             </template>
             <template v-else>
               <ul class="meanings">
-                <li v-for="(m, i) in current().meanings" :key="i">
-                  <em v-if="m.pos">{{ m.pos }}</em>
-                  {{ m.text }}
+                <li v-for="(m, i) in current().meanings" :key="i" class="sense">
+                  <p class="sense-head">
+                    <em v-if="m.pos">{{ m.pos }}</em>
+                    {{ m.text }}
+                  </p>
+                  <p v-if="m.example" class="example">{{ m.example }}</p>
+                  <p v-if="m.example_cn" class="example-cn">{{ m.example_cn }}</p>
+                  <p v-if="m.source" class="exam-src">{{ m.source }}</p>
                 </li>
               </ul>
-              <p class="example">{{ current().example }}</p>
+              <p v-if="!current().meanings?.length" class="example">{{ current().example }}</p>
               <div v-if="current().is_verb && current().verb_forms" class="verb-forms" @click.stop>
                 <div class="vf-title">动词变形</div>
                 <div class="vf-row">
@@ -391,7 +422,7 @@ onMounted(load)
                   <span><i>过去分词</i>{{ current().verb_forms.past_participle }}</span>
                 </div>
               </div>
-              <p class="ph">{{ current().example ? '点下方朗读听例句' : current().word }}</p>
+              <p class="ph">{{ senseExamples(current()).length ? '点下方朗读听例句' : current().word }}</p>
             </template>
           </div>
         </div>
@@ -485,8 +516,15 @@ onMounted(load)
         <h2>{{ quizResult?.all_correct || summary?.today_completed ? '今日打卡成功' : '继续加油' }}</h2>
         <p v-if="quizResult">{{ quizResult.message }}</p>
         <p v-else>今天已经完成背单词打卡。</p>
+        <p v-if="summary?.streak_badge || quizResult?.streak_badge" class="badge-lit">
+          连续打卡徽章已点亮，展示在头像旁
+        </p>
+        <p v-else-if="summary" class="badge-hint">
+          再连续打卡 {{ Math.max(10 - (summary.streak_days || 0), 0) }} 天可点亮徽章；从第 11 天起每天 2 颗星
+        </p>
         <div class="done-stats" v-if="summary">
           <span>连续 {{ summary.streak_days }} 天</span>
+          <span>今日 {{ quizResult?.stars_earned || summary.today_stars || 0 }}★</span>
           <span>本月 {{ summary.stars_month }}★</span>
           <span>累计 {{ summary.stars_total }}★</span>
         </div>
@@ -669,7 +707,12 @@ h1 {
   padding: 0;
   margin: 0 0 10px;
   display: grid;
-  gap: 6px;
+  gap: 10px;
+}
+.sense-head {
+  margin: 0 0 6px;
+  font-weight: 600;
+  color: var(--brand-deep);
 }
 .meanings em {
   color: var(--brand);
@@ -679,8 +722,43 @@ h1 {
 }
 .example {
   background: rgba(232, 163, 23, 0.12);
-  padding: 10px 12px;
+  padding: 8px 12px;
   border-radius: 10px;
+  margin: 0;
+  line-height: 1.5;
+}
+.example-cn {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.exam-src {
+  margin: 4px 0 0;
+  color: #b45309;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+.mini-badge {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  margin-left: 4px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #e8a317, #d97706);
+  color: #fff;
+  font-size: 0.62rem;
+  font-style: normal;
+  font-weight: 800;
+  vertical-align: middle;
+}
+.badge-lit {
+  color: #b45309;
+  font-weight: 700;
+}
+.badge-hint {
+  color: var(--muted);
+  font-size: 0.9rem;
 }
 .verb-forms {
   margin-top: 10px;

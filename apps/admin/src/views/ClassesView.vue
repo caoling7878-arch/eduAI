@@ -87,7 +87,11 @@ onMounted(load)
   <div>
     <div class="toolbar">
       <el-button type="primary" @click="openCreate">新建班级</el-button>
-      <span class="hint">{{ isAdmin ? '全部班级' : '仅显示我任教的班级' }}</span>
+      <span class="hint">{{
+        isAdmin
+          ? '全部班级'
+          : '仅显示我任教的班级；学员列表只含本班学生，新学员请管理员分配'
+      }}</span>
     </div>
     <el-table :data="rows" stripe>
       <el-table-column prop="id" label="ID" width="70" />
@@ -124,7 +128,13 @@ onMounted(load)
           </el-select>
         </el-form-item>
         <el-form-item label="学员">
-          <el-select v-model="form.member_ids" multiple filterable style="width: 100%">
+          <el-select
+            v-model="form.member_ids"
+            multiple
+            filterable
+            style="width: 100%"
+            :placeholder="isAdmin ? '选择学员' : '仅可选择已在您班级中的学员'"
+          >
             <el-option
               v-for="s in students"
               :key="s.id"
@@ -132,6 +142,7 @@ onMounted(load)
               :value="s.id"
             />
           </el-select>
+          <p v-if="!isAdmin" class="field-tip">看不到的学员需由管理员先加入您的班级。</p>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -152,5 +163,11 @@ onMounted(load)
 .hint {
   color: #64748b;
   font-size: 13px;
+}
+.field-tip {
+  margin: 6px 0 0;
+  color: #94a3b8;
+  font-size: 12px;
+  line-height: 1.4;
 }
 </style>

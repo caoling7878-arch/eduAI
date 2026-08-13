@@ -1,5 +1,6 @@
 from __future__ import annotations
 import json
+from datetime import date
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import select
@@ -7,8 +8,9 @@ from sqlalchemy.orm import Session
 
 from ..auth import get_current_user
 from ..db import get_db
-from ..models import ProgressItem, User
+from ..models import ProgressItem, User, VocabReward
 from ..schemas import CourseSummary, ProgressItemOut, ProgressSummaryOut, ProgressUpsertIn, UserOut
+from ..services.vocab_schedule import effective_streak, has_streak_badge
 
 router = APIRouter(prefix="/progress", tags=["progress"])
 
@@ -86,10 +88,19 @@ def _summaries(items: list[ProgressItem]) -> list[CourseSummary]:
 @router.get("/me", response_model=ProgressSummaryOut)
 def my_progress(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> ProgressSummaryOut:
     rows = list(db.scalars(select(ProgressItem).where(ProgressItem.user_id == user.id)))
+    reward = db.scalar(select(VocabReward).where(VocabReward.user_id == user.id))
+    streak = 0
+    if reward:
+        streak = effective_streak(reward.last_checkin_date or "", reward.streak_days or 0, date.today())
+        if streak != (reward.streak_days or 0):
+            reward.streak_days = streak
+            db.commit()
     return ProgressSummaryOut(
         user=UserOut.model_validate(user),
         courses=_summaries(rows),
         items=[_item_out(r) for r in rows],
+        vocab_streak_days=streak,
+        vocab_streak_badge=has_streak_badge(streak),
     )
 
 

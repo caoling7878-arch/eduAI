@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router'
 import MorphIcon from '../components/MorphIcon.vue'
 import WordMeaningArt from '../components/WordMeaningArt.vue'
 import { api } from '../lib/api'
-import { speakWord } from '../lib/speech'
+import { speakWord, speakEnglish } from '../lib/speech'
 import { useAuth } from '../stores/auth'
 
 type Segment = {
@@ -15,11 +15,14 @@ type Segment = {
   color: string
 }
 
+type Meaning = { pos: string; text: string; example?: string; example_cn?: string; source?: string }
+
 type Word = {
   id: number
   word: string
   phonetic: string
   meaning: string
+  meanings?: Meaning[]
   example: string
   level: string
   status: string
@@ -98,6 +101,16 @@ async function mark(status: string) {
 async function speak() {
   const w = current()
   if (!w) return
+  if (flipped.value) {
+    const examples = (w.meanings || [])
+      .map((m) => (m.example || '').trim())
+      .filter(Boolean)
+    const text = examples.length ? examples.join('. ') : (w.example || '').trim()
+    if (text) {
+      await speakEnglish(text, { lang: 'en', mode: 'sentence' })
+      return
+    }
+  }
   await speakWord(w.word)
 }
 
@@ -195,8 +208,21 @@ onMounted(load)
             <p class="hint">点击卡片查看释义与例句</p>
           </template>
           <template v-else>
-            <h2 class="meaning">{{ current().meaning }}</h2>
-            <p class="example">{{ current().example }}</p>
+            <ul class="meanings">
+              <li v-for="(m, i) in current().meanings || []" :key="i" class="sense">
+                <p class="sense-head">
+                  <em v-if="m.pos">{{ m.pos }}</em>
+                  {{ m.text }}
+                </p>
+                <p v-if="m.example" class="example">{{ m.example }}</p>
+                <p v-if="m.example_cn" class="example-cn">{{ m.example_cn }}</p>
+                <p v-if="m.source" class="exam-src">{{ m.source }}</p>
+              </li>
+            </ul>
+            <template v-if="!current().meanings?.length">
+              <h2 class="meaning">{{ current().meaning }}</h2>
+              <p class="example">{{ current().example }}</p>
+            </template>
             <p class="ph">{{ current().word }} · {{ current().phonetic }}</p>
           </template>
         </div>
@@ -396,9 +422,41 @@ h1 {
   font-weight: 600;
 }
 .example {
-  margin: 0 0 10px;
+  margin: 0 0 4px;
   color: #334155;
   line-height: 1.55;
+  background: rgba(232, 163, 23, 0.12);
+  padding: 8px 12px;
+  border-radius: 10px;
+}
+.example-cn {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.exam-src {
+  margin: 0 0 8px;
+  color: #b45309;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+.meanings {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 10px;
+  display: grid;
+  gap: 10px;
+}
+.sense-head {
+  margin: 0 0 6px;
+  font-weight: 600;
+  color: var(--brand-deep);
+}
+.meanings em {
+  color: var(--brand);
+  margin-right: 6px;
+  font-style: normal;
+  font-size: 0.85rem;
 }
 .hint,
 small {

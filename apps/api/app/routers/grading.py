@@ -15,6 +15,8 @@ from ..db import get_db
 from ..models import GradeTask, Notification, Question, User, WrongItem
 from ..rbac import require_staff
 from ..services.grading import ai_grade_task, final_score
+from ..services.teacher_scope import assert_teacher_can_view_student, teacher_student_ids
+
 
 router = APIRouter(prefix="/grading", tags=["grading"])
 
@@ -85,7 +87,7 @@ def _out(t: GradeTask, q: Optional[Question] = None, student: Optional[User] = N
 def grade_queue(
     status: str = Query(default=""),
     qc: str = Query(default=""),
-    _: User = Depends(require_staff),
+    user: User = Depends(require_staff),
     db: Session = Depends(get_db),
 ) -> List[GradeOut]:
     stmt = select(GradeTask).order_by(GradeTask.id.desc()).limit(100)
@@ -95,11 +97,22 @@ def grade_queue(
         stmt = stmt.where(GradeTask.status == status)
     else:
         stmt = stmt.where(GradeTask.status.in_(["pending", "ai_scored"]))
+
+    allowed = teacher_student_ids(db, user)
+    if allowed is not None:
+        if not allowed:
+            return []
+        stmt = stmt.where(GradeTask.user_id.in_(allowed))
+
     rows = list(db.scalars(stmt))
     out = []
     for t in rows:
         out.append(_out(t, db.get(Question, t.question_id), db.get(User, t.user_id)))
     return out
+
+
+def _ensure_grade_access(db: Session, staff: User, t: GradeTask) -> None:
+    assert_teacher_can_view_student(db, staff, t.user_id)
 
 
 @router.get("/me", response_model=List[GradeOut])
@@ -122,6 +135,11 @@ def sample_for_qc(
         stmt = stmt.where(GradeTask.status == "teacher_reviewed")
     else:
         stmt = stmt.where(GradeTask.status.in_(["ai_scored", "teacher_reviewed"]))
+    allowed = teacher_student_ids(db, admin)
+    if allowed is not None:
+        if not allowed:
+            return []
+        stmt = stmt.where(GradeTask.user_id.in_(allowed))
     pool = list(db.scalars(stmt.order_by(GradeTask.id.desc()).limit(200)))
     # 低置信度优先
     low = [t for t in pool if (t.ai_confidence or 0) <= body.max_confidence]
@@ -148,6 +166,7 @@ def mark_qc(
     t = db.get(GradeTask, tid)
     if not t:
         raise HTTPException(status_code=404, detail="任务不存在")
+    _ensure_grade_access(db, admin, t)
     t.qc_status = body.result
     t.qc_note = body.note.strip()
     t.qc_by = admin.id
@@ -167,6 +186,7 @@ async def run_ai_score(
     t = db.get(GradeTask, tid)
     if not t:
         raise HTTPException(status_code=404, detail="任务不存在")
+    _ensure_grade_access(db, admin, t)
     q = db.get(Question, t.question_id)
     if not q:
         raise HTTPException(status_code=404, detail="题目不存在")
@@ -197,6 +217,7 @@ def teacher_review(
     t = db.get(GradeTask, tid)
     if not t:
         raise HTTPException(status_code=404, detail="任务不存在")
+    _ensure_grade_access(db, admin, t)
     q = db.get(Question, t.question_id)
     if body.teacher_score > t.max_score:
         raise HTTPException(status_code=400, detail=f"分数不能超过满分 {t.max_score}")

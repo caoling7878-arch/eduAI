@@ -18,6 +18,8 @@ const state = reactive({
   user: null as User | null,
   courses: [] as CourseSummary[],
   items: [] as ProgressItem[],
+  vocab_streak_days: 0,
+  vocab_streak_badge: false,
   error: '' as string,
 })
 
@@ -27,6 +29,8 @@ async function hydrate() {
     state.user = null
     state.courses = []
     state.items = []
+    state.vocab_streak_days = 0
+    state.vocab_streak_badge = false
     state.ready = true
     return
   }
@@ -35,12 +39,16 @@ async function hydrate() {
     state.user = progress.user
     state.courses = progress.courses
     state.items = progress.items
+    state.vocab_streak_days = progress.vocab_streak_days || 0
+    state.vocab_streak_badge = !!progress.vocab_streak_badge
   } catch (err) {
     if (err instanceof ApiError && err.status === 401) {
       setToken(null)
       state.user = null
       state.courses = []
       state.items = []
+      state.vocab_streak_days = 0
+      state.vocab_streak_badge = false
     } else {
       try {
         state.user = await fetchMe()
@@ -70,11 +78,18 @@ async function register(email: string, password: string, displayName: string) {
   await hydrate()
 }
 
+function applyVocabStreak(days: number, badge: boolean) {
+  state.vocab_streak_days = days
+  state.vocab_streak_badge = badge
+}
+
 function logout() {
   setToken(null)
   state.user = null
   state.courses = []
   state.items = []
+  state.vocab_streak_days = 0
+  state.vocab_streak_badge = false
   state.error = ''
 }
 
@@ -145,6 +160,7 @@ export function useAuth() {
     login,
     register,
     logout,
+    applyVocabStreak,
     track,
     coursePercent,
     isCompleted,

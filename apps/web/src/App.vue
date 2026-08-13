@@ -16,7 +16,9 @@ const isHome = computed(() => route.name === 'home')
 const isPortal = computed(() => auth.isLoggedIn.value && !isGeometryLesson.value)
 
 function goAdmin() {
-  openAdminConsole(getToken())
+  // 教师直达工作台，管理员进仪表盘
+  const path = auth.isAdmin.value ? '/' : '/hub'
+  openAdminConsole(getToken(), path)
 }
 
 async function refreshUnread() {
@@ -121,7 +123,14 @@ onMounted(async () => {
         >
           {{ auth.isAdmin.value ? '系统管理后台' : '教师工作台' }}
         </button>
-        <RouterLink to="/me" class="user-pill">{{ auth.state.user?.display_name }}</RouterLink>
+        <RouterLink to="/me" class="user-pill">
+          <span>{{ auth.state.user?.display_name }}</span>
+          <span
+            v-if="auth.state.vocab_streak_badge"
+            class="streak-badge"
+            :title="`连续打卡 ${auth.state.vocab_streak_days} 天`"
+          >连</span>
+        </RouterLink>
         <button type="button" class="link-btn" @click="auth.logout()">退出</button>
       </div>
     </header>
@@ -191,7 +200,14 @@ onMounted(async () => {
           登录
         </RouterLink>
         <template v-else>
-          <RouterLink to="/me" class="user-pill">{{ auth.state.user?.display_name }}</RouterLink>
+          <RouterLink to="/me" class="user-pill">
+            <span>{{ auth.state.user?.display_name }}</span>
+            <span
+              v-if="auth.state.vocab_streak_badge"
+              class="streak-badge"
+              :title="`连续打卡 ${auth.state.vocab_streak_days} 天`"
+            >连</span>
+          </RouterLink>
           <button type="button" class="link-btn" @click="auth.logout()">退出</button>
         </template>
       </nav>
@@ -358,12 +374,28 @@ onMounted(async () => {
 }
 
 .user-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   padding: 6px 12px;
   border-radius: 999px;
   background: var(--brand-soft);
   color: var(--brand-deep);
   font-size: 0.85rem;
   font-weight: 600;
+}
+
+.streak-badge {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #e8a317, #d97706);
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 800;
+  box-shadow: 0 0 0 2px rgba(232, 163, 23, 0.25);
 }
 
 .link-btn {

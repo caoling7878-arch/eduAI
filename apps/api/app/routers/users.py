@@ -7,9 +7,10 @@ from sqlalchemy.orm import Session
 from ..audit_util import write_audit
 from ..auth import get_current_user, hash_password
 from ..db import get_db
-from ..models import User
+from ..models import ClassMember, ClassRoom, User
 from ..rbac import require_admin, require_staff
 from ..schemas import UserAdminIn, UserOut
+from ..services.teacher_scope import teacher_student_ids
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -17,13 +18,27 @@ router = APIRouter(prefix="/users", tags=["users"])
 @router.get("/options", response_model=list[UserOut])
 def list_user_options(
     role: str = Query(default=""),
-    _: User = Depends(require_staff),
+    user: User = Depends(require_staff),
     db: Session = Depends(get_db),
 ) -> list[User]:
-    """教师/管理员可读的轻量用户列表（用于班级花名册等），不含写权限。"""
+    """教师/管理员可读的轻量用户列表（用于班级花名册等）。
+
+    教师请求学员列表时，仅返回自己班级内的学生。
+    """
     stmt = select(User).where(User.status == "active").order_by(User.id.desc())
     if role:
         stmt = stmt.where(User.role == role)
+
+    if user.role == "teacher" and (not role or role == "student"):
+        allowed = teacher_student_ids(db, user) or []
+        if role == "student" or not role:
+            if not allowed:
+                return []
+            stmt = stmt.where(User.id.in_(allowed), User.role == "student")
+    elif user.role == "teacher" and role == "teacher":
+        # 教师改班级时通常不需要选其他教师；仅返回自己
+        stmt = stmt.where(User.id == user.id)
+
     return list(db.scalars(stmt.limit(500)))
 
 

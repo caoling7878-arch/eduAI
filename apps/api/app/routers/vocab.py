@@ -26,10 +26,17 @@ from ..models import (
 )
 from ..rbac import require_staff
 from ..services.vocab_images import photo_url
-from ..services.vocab_schedule import schedule_ok, schedule_wrong, star_for_streak
+from ..services.vocab_schedule import (
+    effective_streak,
+    has_streak_badge,
+    schedule_ok,
+    schedule_wrong,
+    star_for_streak,
+)
 from ..services.verb_forms import conjugations_for
 from ..services.word_image import resolve_theme
 from ..services.word_morphology import morph_for, morph_json_dumps
+from ..services.vocab_senses import enrich_item
 
 router = APIRouter(prefix="/vocab", tags=["vocab"])
 
@@ -55,6 +62,9 @@ class MorphSegment(BaseModel):
 class MeaningItem(BaseModel):
     pos: str = ""
     text: str = ""
+    example: str = ""
+    example_cn: str = ""
+    source: str = ""
 
 
 class VerbForms(BaseModel):
@@ -150,20 +160,41 @@ def _load_prefs(db: Session, user_id: int) -> VocabPrefs:
 
 
 def _parse_meanings(w: VocabWord) -> List[MeaningItem]:
+    raw_meanings = None
     try:
         raw = json.loads(w.meanings_json or "[]")
         if isinstance(raw, list) and raw:
-            return [MeaningItem(pos=str(x.get("pos") or w.pos or ""), text=str(x.get("text") or "")) for x in raw]
+            raw_meanings = raw
     except (json.JSONDecodeError, TypeError):
-        pass
-    parts = [p.strip() for p in (w.meaning or "").replace(";", "；").split("；") if p.strip()]
-    if not parts:
-        parts = [w.meaning or ""]
-    return [MeaningItem(pos=w.pos or "", text=p) for p in parts]
+        raw_meanings = None
+    enriched = enrich_item(
+        {
+            "word": w.word,
+            "pos": w.pos or "",
+            "meaning": w.meaning or "",
+            "example": w.example or "",
+            "scene": w.scene or "",
+            "meanings": raw_meanings,
+        }
+    )
+    return [MeaningItem(**m) for m in (enriched.get("meanings") or [])]
+
+
+def _sense_label(m: MeaningItem) -> str:
+    pos = (m.pos or "").strip()
+    text = (m.text or "").strip()
+    return f"{pos} {text}".strip()
+
+
+def _all_sense_label(w: WordOut) -> str:
+    if w.meanings:
+        return "；".join(_sense_label(m) for m in w.meanings if m.text)
+    return w.meaning or ""
 
 
 def _out(w: VocabWord, prog: Optional[VocabProgress] = None, role: str = "new") -> WordOut:
     meanings = _parse_meanings(w)
+    first_ex = next((m.example for m in meanings if m.example), w.example or "")
     morph = morph_for(w.word, w.morphology_json or "", meaning=w.meaning or "")
     theme = resolve_theme(w.word, w.meaning or "", w.image_key or morph.get("image_key") or w.word)
     segments = [MorphSegment(**s) for s in morph.get("segments") or []]
@@ -175,7 +206,7 @@ def _out(w: VocabWord, prog: Optional[VocabProgress] = None, role: str = "new") 
         phonetic=w.phonetic or "",
         meaning=w.meaning,
         meanings=meanings,
-        example=w.example,
+        example=first_ex or w.example,
         level=w.level,
         status=prog.status if prog else "new",
         review_count=prog.review_count if prog else 0,
@@ -347,9 +378,13 @@ def course_summary(user: User = Depends(get_current_user), db: Session = Depends
     days_needed = math.ceil(total / daily) if daily and total else 0
     days_left = math.ceil(max(total - learned, 0) / daily) if daily else 0
     reward = _get_or_create_reward(db, user.id)
-    today = date.today().isoformat()
+    today = date.today()
+    today_s = today.isoformat()
+    streak = effective_streak(reward.last_checkin_date or "", reward.streak_days or 0, today)
+    if streak != (reward.streak_days or 0):
+        reward.streak_days = streak
     log = db.scalar(
-        select(VocabDailyLog).where(VocabDailyLog.user_id == user.id, VocabDailyLog.day == today)
+        select(VocabDailyLog).where(VocabDailyLog.user_id == user.id, VocabDailyLog.day == today_s)
     )
     db.commit()
     bank_name = next((b["name"] for b in BANKS if b["id"] == prefs.bank), prefs.bank)
@@ -365,7 +400,9 @@ def course_summary(user: User = Depends(get_current_user), db: Session = Depends
         "percent": round(learned * 100 / total, 1) if total else 0,
         "stars_total": reward.stars_total,
         "stars_month": reward.stars_month,
-        "streak_days": reward.streak_days,
+        "streak_days": streak,
+        "streak_badge": has_streak_badge(streak),
+        "stars_per_day": star_for_streak(streak if (log and log.completed) else (streak + 1 if streak else 1)),
         "stars_to_member": max(STARS_PER_MONTH_MEMBER - reward.stars_month, 0),
         "today_completed": bool(log and log.completed),
         "today_stars": log.stars_earned if log else 0,
@@ -529,8 +566,8 @@ def course_quiz(user: User = Depends(get_current_user), db: Session = Depends(ge
     meanings_pool = [p.meaning for p in pool if p.meaning]
     items: List[QuizItem] = []
     for w in pack:
-        correct = w.meanings[0].text if w.meanings else w.meaning
-        distractors = [m for m in meanings_pool if m != w.meaning and correct not in m]
+        correct = _all_sense_label(w)
+        distractors = [m for m in meanings_pool if m != w.meaning and correct not in m and m not in correct]
         random.shuffle(distractors)
         opts = [correct] + distractors[:3]
         while len(opts) < 4:
@@ -540,7 +577,7 @@ def course_quiz(user: User = Depends(get_current_user), db: Session = Depends(ge
             QuizItem(
                 word_id=w.id,
                 word=w.word,
-                prompt=f"「{w.word}」的中文意思是？",
+                prompt=f"「{w.word}」的中文意思是？（含全部词性）",
                 options=opts,
             )
         )
@@ -563,16 +600,11 @@ def submit_quiz(
 
     for w in pack:
         ans = str(body.answers.get(str(w.id)) or body.answers.get(w.id) or "").strip()
-        # 任一完整义项命中即正确
-        ok_texts = {w.meaning}
+        ok_texts = {w.meaning, _all_sense_label(w)}
         for m in w.meanings:
             ok_texts.add(m.text)
-            ok_texts.add(w.meaning)
-        # 选项可能是完整 meaning 字符串
-        is_ok = ans == w.meaning or ans in ok_texts or any(ans == m.text for m in w.meanings)
-        # 也接受「分号拼接」首义
-        if w.meanings and ans == w.meanings[0].text:
-            is_ok = True
+            ok_texts.add(_sense_label(m))
+        is_ok = ans in ok_texts
 
         prog = db.scalar(
             select(VocabProgress).where(VocabProgress.user_id == user.id, VocabProgress.word_id == w.id)
@@ -607,7 +639,8 @@ def submit_quiz(
     all_correct = total > 0 and correct_n == total
     reward = _get_or_create_reward(db, user.id)
     stars = 0
-    streak = reward.streak_days or 0
+    streak = effective_streak(reward.last_checkin_date or "", reward.streak_days or 0, today)
+    badge_note = ""
 
     log = db.scalar(
         select(VocabDailyLog).where(VocabDailyLog.user_id == user.id, VocabDailyLog.day == today_s)
@@ -625,7 +658,6 @@ def submit_quiz(
     log.bank = prefs.bank
 
     if all_correct and not log.completed:
-        # 连续打卡
         yesterday = (today - timedelta(days=1)).isoformat()
         if reward.last_checkin_date == yesterday:
             streak = streak + 1
@@ -640,10 +672,12 @@ def submit_quiz(
         reward.stars_month = (reward.stars_month or 0) + stars
         log.stars_earned = stars
         log.completed = True
+        badge_note = "，并点亮连续打卡徽章" if has_streak_badge(streak) else ""
     elif not all_correct:
-        # 未全对：不算打卡完成，但可保留进度；断签逻辑在下次全对时按日期判断
         log.completed = False
         log.stars_earned = 0
+        if streak == 0:
+            reward.streak_days = 0
 
     db.commit()
     return {
@@ -655,9 +689,11 @@ def submit_quiz(
         "streak_days": reward.streak_days,
         "stars_total": reward.stars_total,
         "stars_month": reward.stars_month,
+        "streak_badge": has_streak_badge(reward.streak_days or 0),
+        "stars_per_day": star_for_streak(reward.streak_days or 0),
         "details": details,
         "message": (
-            f"全部正确！获得 {stars} 颗星，连续打卡 {reward.streak_days} 天"
+            f"全部正确！获得 {stars} 颗星，连续打卡 {reward.streak_days} 天{badge_note}"
             if all_correct
             else f"答对 {correct_n}/{total}，错题已纳入优先复习"
         ),
@@ -744,17 +780,27 @@ def seed_zhongkao_bank(db: Session) -> int:
     }
     added = 0
     updated = 0
-    for idx, item in enumerate(data):
+    for idx, raw in enumerate(data):
+        item = enrich_item(raw)
         key = str(item["word"]).lower()
+        meanings_json = json.dumps(item.get("meanings") or [], ensure_ascii=False)
         row = by_word.get(key)
         if row:
-            if int(row.sort_order or 0) != idx or (row.frequency or "") != (item.get("frequency") or ""):
+            changed = (
+                int(row.sort_order or 0) != idx
+                or (row.frequency or "") != (item.get("frequency") or "")
+                or (row.meanings_json or "") != meanings_json
+                or (row.example or "") != (item.get("example") or "")
+                or (row.pos or "") != (item.get("pos") or "")
+            )
+            if changed:
                 row.sort_order = idx
                 row.frequency = item.get("frequency") or row.frequency or ""
                 row.scene = item.get("scene") or row.scene or ""
                 row.pos = item.get("pos") or row.pos or ""
-                if item.get("meanings") and not (row.meanings_json or "").strip():
-                    row.meanings_json = json.dumps(item.get("meanings") or [], ensure_ascii=False)
+                row.meaning = item.get("meaning") or row.meaning or ""
+                row.example = item.get("example") or ""
+                row.meanings_json = meanings_json
                 updated += 1
             continue
         morph = morph_for(item["word"])
@@ -770,7 +816,7 @@ def seed_zhongkao_bank(db: Session) -> int:
                 pos=item.get("pos") or "",
                 scene=item.get("scene") or "",
                 frequency=item.get("frequency") or "",
-                meanings_json=json.dumps(item.get("meanings") or [], ensure_ascii=False),
+                meanings_json=meanings_json,
                 morphology_json=morph_json_dumps(morph),
                 image_key=(item["word"] or "").lower(),
             )

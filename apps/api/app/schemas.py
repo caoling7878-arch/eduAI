@@ -72,6 +72,8 @@ class ProgressSummaryOut(BaseModel):
     user: UserOut
     courses: List[CourseSummary]
     items: List[ProgressItemOut]
+    vocab_streak_days: int = 0
+    vocab_streak_badge: bool = False
 
 
 class TeacherOut(BaseModel):

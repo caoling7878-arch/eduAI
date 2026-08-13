@@ -138,7 +138,14 @@ onMounted(load)
     <header class="hero">
       <div>
         <p class="eyebrow">个人中心</p>
-        <h1>{{ auth.state.user?.display_name || '学员' }}</h1>
+        <h1>
+          {{ auth.state.user?.display_name || '学员' }}
+          <span
+            v-if="auth.state.vocab_streak_badge"
+            class="streak-badge"
+            :title="`连续打卡 ${auth.state.vocab_streak_days} 天`"
+          >连</span>
+        </h1>
         <p class="sub">{{ auth.state.user?.email }}</p>
       </div>
       <div class="actions">
@@ -314,6 +321,21 @@ h1 {
   margin: 6px 0 4px;
   font-family: 'Noto Serif SC', serif;
   font-size: clamp(1.8rem, 3vw, 2.4rem);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.streak-badge {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #e8a317, #d97706);
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 800;
+  font-family: inherit;
 }
 .sub {
   margin: 0;

@@ -9,12 +9,20 @@ from ..db import get_db
 from ..models import ClassMember, ClassRoom, User
 from ..rbac import require_staff
 from ..schemas import ClassIn, ClassOut
+from ..services.teacher_scope import assert_teacher_owns_class, filter_member_ids_for_teacher
+
 
 router = APIRouter(prefix="/classes", tags=["classes"])
 
 
 def _out(db: Session, c: ClassRoom) -> ClassOut:
-    mids = list(db.scalars(select(ClassMember.user_id).where(ClassMember.class_id == c.id)))
+    mids = list(
+        db.scalars(
+            select(ClassMember.user_id)
+            .join(User, User.id == ClassMember.user_id)
+            .where(ClassMember.class_id == c.id, User.role == "student")
+        )
+    )
     return ClassOut(
         id=c.id,
         name=c.name,
@@ -48,10 +56,11 @@ def create_class(
     teacher_id = body.teacher_id
     if admin.role == "teacher":
         teacher_id = admin.id
+    member_ids = filter_member_ids_for_teacher(db, admin, list(body.member_ids or []))
     c = ClassRoom(name=body.name, teacher_id=teacher_id, course_id=body.course_id)
     db.add(c)
     db.flush()
-    for uid in body.member_ids:
+    for uid in member_ids:
         db.add(ClassMember(class_id=c.id, user_id=uid))
     write_audit(db, user=admin, action="class.create", resource=body.name)
     db.commit()
@@ -66,18 +75,16 @@ def update_class(
     admin: User = Depends(require_staff),
     db: Session = Depends(get_db),
 ) -> ClassOut:
-    c = db.get(ClassRoom, class_id)
-    if not c:
-        raise HTTPException(status_code=404, detail="班级不存在")
-    if admin.role == "teacher" and c.teacher_id != admin.id:
-        raise HTTPException(status_code=403, detail="只能管理自己的班级")
+    c = assert_teacher_owns_class(db, admin, class_id)
     c.name = body.name
     if admin.role == "admin":
         c.teacher_id = body.teacher_id
     c.course_id = body.course_id
+    member_ids = filter_member_ids_for_teacher(db, admin, list(body.member_ids or []))
+    # 更新时允许保留本班现有学员（即使按「全局已任教池」校验也在池内）
     for m in list(db.scalars(select(ClassMember).where(ClassMember.class_id == class_id))):
         db.delete(m)
-    for uid in body.member_ids:
+    for uid in member_ids:
         db.add(ClassMember(class_id=class_id, user_id=uid))
     write_audit(db, user=admin, action="class.update", resource=str(class_id))
     db.commit()
@@ -91,11 +98,7 @@ def delete_class(
     admin: User = Depends(require_staff),
     db: Session = Depends(get_db),
 ) -> dict[str, str]:
-    c = db.get(ClassRoom, class_id)
-    if not c:
-        raise HTTPException(status_code=404, detail="班级不存在")
-    if admin.role == "teacher" and c.teacher_id != admin.id:
-        raise HTTPException(status_code=403, detail="只能管理自己的班级")
+    c = assert_teacher_owns_class(db, admin, class_id)
     db.delete(c)
     write_audit(db, user=admin, action="class.delete", resource=str(class_id))
     db.commit()

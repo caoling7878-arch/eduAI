@@ -14,6 +14,7 @@ from ..auth import get_current_user
 from ..db import get_db
 from ..models import ClassMember, Notification, Question, User, WrongItem
 from ..rbac import require_staff
+from ..services.teacher_scope import assert_teacher_owns_class, teacher_student_ids
 
 router = APIRouter(prefix="/practice", tags=["practice-recommend"])
 
@@ -128,12 +129,22 @@ def push_practice(
     admin: User = Depends(require_staff),
     db: Session = Depends(get_db),
 ) -> dict:
+    allowed = teacher_student_ids(db, admin)
     targets = set(body.user_ids)
     if body.class_id:
-        mids = list(db.scalars(select(ClassMember.user_id).where(ClassMember.class_id == body.class_id)))
+        assert_teacher_owns_class(db, admin, body.class_id)
+        mids = list(
+            db.scalars(
+                select(ClassMember.user_id)
+                .join(User, User.id == ClassMember.user_id)
+                .where(ClassMember.class_id == body.class_id, User.role == "student")
+            )
+        )
         targets.update(mids)
+    if allowed is not None:
+        targets = {uid for uid in targets if uid in allowed}
     if not targets:
-        raise HTTPException(status_code=400, detail="请指定学员或班级")
+        raise HTTPException(status_code=400, detail="请指定自己班级内的学员或班级")
 
     qids = [qid for qid in body.question_ids if db.get(Question, qid)]
     if not qids and body.class_id:

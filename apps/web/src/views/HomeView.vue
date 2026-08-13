@@ -33,6 +33,7 @@ const vocabSummary = ref<{
   need_reminder: boolean
   today_completed: boolean
   streak_days: number
+  streak_badge?: boolean
   stars_month: number
   stars_total: number
   bank_name: string
@@ -167,6 +168,9 @@ onMounted(async () => {
         api('/vocab/course/summary'),
         api('/math-calc/summary'),
       ])
+    if (vocabSummary.value) {
+      auth.applyVocabStreak(vocabSummary.value.streak_days || 0, !!vocabSummary.value.streak_badge)
+    }
   } catch {
     announcements.value = announcements.value || []
   }
@@ -199,7 +203,10 @@ onMounted(async () => {
         </section>
         <section v-else-if="showVocabDone && vocabSummary" class="panel remind-done fade-up">
           <div class="remind-done-row">
-            <span>我爱背单词 · 今日已打卡 ✓ · 连续 {{ vocabSummary.streak_days }} 天</span>
+            <span>
+              我爱背单词 · 今日已打卡 ✓ · 连续 {{ vocabSummary.streak_days }} 天
+              <i v-if="vocabSummary.streak_badge" class="home-streak">连</i>
+            </span>
             <RouterLink to="/courses/love-words">复习</RouterLink>
           </div>
         </section>
@@ -622,6 +629,20 @@ onMounted(async () => {
   color: var(--brand);
   font-weight: 600;
   white-space: nowrap;
+}
+.home-streak {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #e8a317, #d97706);
+  color: #fff;
+  font-size: 0.62rem;
+  font-style: normal;
+  font-weight: 800;
+  vertical-align: middle;
 }
 
 .today-body {
