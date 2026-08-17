@@ -123,7 +123,7 @@ function downloadFile(url, dest, onProgress, redirects = 0) {
       },
     )
     req.on('error', reject)
-    req.setTimeout(120000, () => {
+    req.setTimeout(15 * 60 * 1000, () => {
       req.destroy()
       reject(new Error('下载超时，请检查网络后重试'))
     })
@@ -158,7 +158,10 @@ function pickAsset(assets) {
   }
   if (process.platform === 'darwin') {
     const tag = process.arch === 'arm64' ? 'arm64' : 'x64'
+    // 未公证时 DMG 替换 .app 常被 Gatekeeper 拦截，优先用 PKG
     return (
+      list.find((a) => new RegExp(`eduAI-.*-${tag}\\.pkg$`, 'i').test(a.name || '')) ||
+      list.find((a) => /\.pkg$/i.test(a.name || '')) ||
       list.find((a) => new RegExp(`eduAI-.*-${tag}\\.dmg$`, 'i').test(a.name || '')) ||
       list.find((a) => /\.dmg$/i.test(a.name || ''))
     )
@@ -276,6 +279,43 @@ rm -f "$0"
   child.unref()
 }
 
+function relaunchMacAfterQuit() {
+  const sh = path.join(os.tmpdir(), 'eduai-relaunch.sh')
+  const pid = process.pid
+  fs.writeFileSync(
+    sh,
+    `#!/bin/bash
+PID="${pid}"
+while /bin/kill -0 "$PID" 2>/dev/null; do sleep 0.3; done
+sleep 0.6
+xattr -cr /Applications/eduAI.app >/dev/null 2>&1 || true
+open /Applications/eduAI.app
+rm -f "$0"
+`,
+    'utf8',
+  )
+  fs.chmodSync(sh, 0o755)
+  const child = spawn('/bin/bash', [sh], { detached: true, stdio: 'ignore' })
+  child.unref()
+}
+
+async function installMacPkg(pkgPath) {
+  emit({ state: 'installing', message: '请在系统弹窗中输入 Mac 登录密码以完成安装…' })
+  const script =
+    'do shell script "/usr/sbin/installer -pkg " & quoted form of ' +
+    JSON.stringify(pkgPath) +
+    ' & " -target /" with administrator privileges'
+  try {
+    await run('osascript', ['-e', script])
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    if (/User canceled|-128|用户已取消|未输入/i.test(msg)) {
+      throw new Error('已取消安装：未输入 Mac 密码')
+    }
+    throw new Error(msg.trim() || 'PKG 安装失败')
+  }
+}
+
 async function installMacDmg(dmgPath) {
   emit({ state: 'installing', message: '正在安装…' })
   const out = await run('hdiutil', ['attach', '-nobrowse', dmgPath])
@@ -318,6 +358,7 @@ async function startUpdate() {
       return info
     }
 
+    const usePkg = process.platform === 'darwin' && /\.pkg$/i.test(info.assetName || info.downloadUrl || '')
     const win = getWindow()
     if (win && !win.isDestroyed()) {
       const sizeMb = info.size ? `约 ${Math.max(1, Math.round(info.size / 1024 / 1024))} MB，` : ''
@@ -328,7 +369,9 @@ async function startUpdate() {
         cancelId: 1,
         title: '发现新版本',
         message: `eduAI ${info.latestVersion} 已发布`,
-        detail: `${sizeMb}下载完成后将自动安装并重启应用。请保持网络畅通。`,
+        detail: usePkg
+          ? `${sizeMb}将下载 PKG 安装包。安装时请在系统弹窗中输入一次 Mac 登录密码，然后应用会自动重启。`
+          : `${sizeMb}下载完成后将自动安装并重启应用。请保持网络畅通。`,
       })
       if (response !== 0) {
         busy = false
@@ -337,23 +380,30 @@ async function startUpdate() {
       }
     }
 
-    const ext = process.platform === 'win32' ? '.exe' : '.dmg'
+    const ext = process.platform === 'win32' ? '.exe' : usePkg ? '.pkg' : '.dmg'
     const dest = path.join(os.tmpdir(), `eduAI-update-${info.latestVersion}${ext}`)
     emit({ state: 'downloading', percent: 0, ...info })
     await downloadFile(info.downloadUrl, dest, (percent) => {
       emit({ state: 'downloading', percent, ...info })
     })
 
-    emit({ state: 'installing', percent: 100, message: '正在安装，应用即将重启…', ...info })
-    setQuitting(true)
-    stopServer()
-
-    if (process.platform === 'win32') {
-      applyWindows(dest)
-    } else if (process.platform === 'darwin') {
-      await installMacDmg(dest)
+    if (process.platform === 'darwin' && usePkg) {
+      await installMacPkg(dest)
+      emit({ state: 'installing', percent: 100, message: '安装完成，应用即将重启…', ...info })
+      setQuitting(true)
+      stopServer()
+      relaunchMacAfterQuit()
     } else {
-      throw new Error('当前系统暂不支持自动更新')
+      emit({ state: 'installing', percent: 100, message: '正在安装，应用即将重启…', ...info })
+      setQuitting(true)
+      stopServer()
+      if (process.platform === 'win32') {
+        applyWindows(dest)
+      } else if (process.platform === 'darwin') {
+        await installMacDmg(dest)
+      } else {
+        throw new Error('当前系统暂不支持自动更新')
+      }
     }
 
     setTimeout(() => app.quit(), 400)
