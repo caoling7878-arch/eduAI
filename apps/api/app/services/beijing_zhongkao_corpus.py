@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-"""北京中考英语真题短句语料（2017–2026）。短句摘自公开真题，供背单词例句检索。"""
+"""中考英语真题短句语料（2015–2026，含北京及近十年全国卷）。短句摘自公开真题，供背单词例句检索。"""
 
 import json
 import re
@@ -34,7 +34,14 @@ def _clean(text: str) -> str:
     return t
 
 
-def _add(rows: List[dict], year: int, section: str, en: str, cn: str = "") -> None:
+def _add(
+    rows: List[dict],
+    year: int,
+    section: str,
+    en: str,
+    cn: str = "",
+    place: str = "北京",
+) -> None:
     en = _clean(en)
     cn = (cn or "").strip()
     if len(en) < 12:
@@ -45,10 +52,16 @@ def _add(rows: List[dict], year: int, section: str, en: str, cn: str = "") -> No
     en = re.sub(r"\s+", " ", en).strip(" -")
     if not en.endswith((".", "!", "?", "”", '"')):
         en = en.rstrip(".,;:") + "."
-    rows.append({"year": year, "section": section, "en": en, "cn": cn})
+    rows.append({"year": year, "section": section, "en": en, "cn": cn, "place": place or "北京"})
 
 
-def _split_passage(year: int, section: str, text: str, zh: Dict[str, str] | None = None) -> List[dict]:
+def _split_passage(
+    year: int,
+    section: str,
+    text: str,
+    zh: Dict[str, str] | None = None,
+    place: str = "北京",
+) -> List[dict]:
     rows: List[dict] = []
     body = _clean(text)
     zh = zh or {}
@@ -58,7 +71,7 @@ def _split_passage(year: int, section: str, text: str, zh: Dict[str, str] | None
             if k.lower() in p.lower():
                 cn = v
                 break
-        _add(rows, year, section, p, cn)
+        _add(rows, year, section, p, cn, place=place)
     return rows
 
 
@@ -193,11 +206,15 @@ def _build() -> List[dict]:
          "I enjoyed speaking in public and got along well with people, so I felt it easy to win. But I was afraid that people would feel bad for me if I lost. "
          "I was busy preparing in the following week. My plan wasn't to make promises to do things I couldn't manage but to show my class why I wanted to be president. "
          "I put up my posters in hallways and in the classroom. I also spent three hours writing my speech, saying that I was the one they could turn to whenever they had a problem. "
-         "Since I was well prepared, I felt that my chances of winning were strong. "
-         "However, when I gave my speech on Election Day, the response wasn't what I had expected. Few people actually listened. "
-         "When it was time to vote, I didn't receive enough votes. I felt disappointed but soon realized I had to face this result. "
-         "Later, I talked with a friend. She said she voted for me because I was always ready to help. That made me feel better. "
-         "I didn't win, but I learned that facing disappointment and becoming stronger is more important."),
+         "Since I was fully prepared, I felt that my chances of winning were strong. "
+         "However, when I gave my speech on Election Day, the response wasn't what I had pictured. Few people actually listened. "
+         "When it was my opponent's turn, everyone was screaming his name. His speech was short, but all to the point. "
+         "By then, I realized I should have made mine shorter and clearer. It was obvious who would win. "
+         "For the rest of the day, I felt like it was over. I wanted to just go home and cry, but I made it through. "
+         "My prediction was right: I didn't win. The next day, people were still talking about the election. "
+         "I just pretended not to hear. But later, things got better. People forgot about the election and talked to me just as they did before. "
+         "I don't regret putting time and energy into the election because I've learned that things aren't always going the way I expect. "
+         "And moments of failure like this build character, since then I've learned to face disappointment and grown stronger."),
         (2021, "cloze",
          "When Mike was seven, he knew his dream was to be a photographer. He kept working on it for years. "
          "Recently, he was trying to take a picture of a sunset to enter the school photo competition. "
@@ -226,11 +243,22 @@ def _build() -> List[dict]:
          "Later, we named the goose Charley and he lived out his life in the yard, bossing around the chickens and another goose we bought to keep him company. "
          "A life as the most important bird was fitting for our hero."),
         (2023, "cloze",
-         "I stopped at a restaurant for lunch. The woman behind the counter seemed tired. I'd been standing there for at least three minutes! "
-         "If someone is unkind, then kindness is missing. If someone is hateful, then love is missing. What's missing is service. "
-         "Can I help you? she still asked coldly. I thought to myself as I ate my sandwich. We're all the same, really. "
-         "I left the restaurant cleaner than usual, and put the tray back nicely on the stand. The woman was watching me, a big smile on her face. "
-         "Be what's missing. It worked."),
+         "Where was that cashier? Impatient, I quickly looked at my watch. I hardly had enough time to eat a sandwich and rush back to work. "
+         "I looked around the nearly empty restaurant, but the cashier was nowhere in sight. "
+         "A woman stood wiping the far end of the counter. She looked at me coldly with sad, dark eyes. "
+         "I waited, getting angry. I'd been standing there for at least three minutes! "
+         "Controlling my anger, I remembered Mom's words. Whenever you find yourself in an unpleasant situation, just think about what is missing. "
+         "If someone is unkind, then kindness is missing. If someone is hateful, then love is missing. "
+         "If we will be what's missing, then we'll provide whatever the situation needs. "
+         "And here I was in an unpleasant situation. How should I be what's missing? What was missing was service. "
+         "Maybe I should just jump behind the counter and take my own order. "
+         "Just then the woman walked slowly towards me. May I help you? she asked, still coldly. She looked so tired. No doubt, she was overworked. "
+         "I took a deep breath. With Mom's words ringing in my head, I gave the woman my order and smiled. How are you today? "
+         "My question seemed to surprise her. She eyed me for a second before answering. Not too good. "
+         "I'm sorry, I said. I hope it gets better starting right now. She almost smiled as she looked at me. Thanks. I hope you're right. "
+         "I thought to myself as I ate my sandwich. We're all the same, really. We have problems and angers, we get tired and we hurt. We need to be nicer to each other. "
+         "After eating, I wiped the table cleaner than usual, and put the tray back nicely on the stand. "
+         "The woman was watching me, a big smile on her face. Be what's missing. It worked."),
         (2024, "cloze",
          "Every summer, Serena spent two weeks at Green Farm's horseback riding camp. "
          "Last year, Serena and her favorite horse Piper finished second in the obstacle course race. "
@@ -413,16 +441,47 @@ def _build() -> List[dict]:
     for year, text in readings:
         rows.extend(_split_passage(year, "reading", text))
 
-    # 去重（同年同句）
+    _load_extra(rows)
+
+    # 去重（同地同年同句）
     seen = set()
     uniq: List[dict] = []
     for r in rows:
-        k = (r["year"], r["en"].lower())
+        k = (r.get("place") or "北京", r["year"], r["en"].lower())
         if k in seen:
             continue
         seen.add(k)
         uniq.append(r)
     return uniq
+
+
+def _load_extra(rows: List[dict]) -> None:
+    data_dir = Path(__file__).resolve().parents[1] / "data"
+    zh = _zh_map()
+    for name in ("beijing_zhongkao_extra.json", "zhongkao_national_extra.json"):
+        path = data_dir / name
+        if not path.exists():
+            continue
+        extra = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(extra, list):
+            continue
+        for item in extra:
+            if not isinstance(item, dict):
+                continue
+            try:
+                year = int(item.get("year") or 0)
+            except (TypeError, ValueError):
+                continue
+            section = str(item.get("section") or "grammar")
+            place = str(item.get("place") or "北京")
+            en = str(item.get("en") or "")
+            cn = str(item.get("cn") or "")
+            if not en.strip():
+                continue
+            if item.get("split"):
+                rows.extend(_split_passage(year, section, en, zh, place=place))
+            else:
+                _add(rows, year, section, en, cn, place=place)
 
 
 @lru_cache(maxsize=1)

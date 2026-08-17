@@ -617,21 +617,33 @@ def build_senses(
 
     out: List[Dict[str, str]] = []
     used_ids: List[int] = []
+    shared_exam: dict | None = None
     for i, pair in enumerate(pairs):
         src = meanings[i] if meanings and i < len(meanings) and isinstance(meanings[i], dict) else {}
         hits = lookup_exam_examples(word, pair["pos"], limit=4, used_ids=used_ids)
+        if not hits:
+            # 词性对不上时，仍用含该词的真题句，避免改用自造句
+            hits = lookup_exam_examples(word, "", limit=4, used_ids=used_ids)
+        if not hits:
+            hits = lookup_exam_examples(word, pair["pos"] or "", limit=4, used_ids=[])
         picked = hits[0] if hits else None
         if picked:
             used_ids.append(int(picked["id"]))
+            if shared_exam is None:
+                shared_exam = picked
             ex, cn = picked["en"], picked["cn"]
             src_label = picked.get("source") or ""
+        elif shared_exam:
+            ex, cn = shared_exam["en"], shared_exam["cn"]
+            src_label = shared_exam.get("source") or ""
         else:
             bank_item = bank[i] if bank and i < len(bank) else {}
             ex = str(bank_item.get("example") or src.get("example") or "")
             cn = str(bank_item.get("example_cn") or src.get("example_cn") or "")
-            src_label = ""
-            if _is_generic_example(ex) or not ex or not cn:
+            src_label = str(bank_item.get("source") or src.get("source") or "")
+            if not src_label or _is_generic_example(ex) or not ex:
                 ex, cn = _fallback_example(word, pair["pos"], pair["text"], scene)
+                src_label = ""
         out.append(
             {
                 "pos": pair["pos"],

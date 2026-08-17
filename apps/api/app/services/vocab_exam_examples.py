@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-"""从北京中考英语真题语料中为单词匹配真实例句（单项 / 完形 / 阅读原句）。"""
+"""从中考英语真题语料中为单词匹配真实例句（单项 / 完形 / 阅读 / 听力题干原句）。"""
 
 import re
 from functools import lru_cache
@@ -9,7 +9,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 from .beijing_zhongkao_corpus import CORPUS, _zh_map
 from .verb_forms import conjugate
 
-_TOKEN = re.compile(r"[A-Za-z]+(?:'[A-Za-z]+)?")
+_TOKEN = re.compile(r"[A-Za-z]+(?:[-'][A-Za-z]+)*")
 
 IRREGULAR_NOUNS = {
     "child": ["children"],
@@ -35,6 +35,46 @@ IRREGULAR_NOUNS = {
     "Japanese": ["Japanese"],
 }
 
+SPELLING_VARIANTS = {
+    "color": ["colour", "colored", "coloured"],
+    "neighbor": ["neighbour", "neighbors", "neighbours"],
+    "favorite": ["favourite"],
+    "center": ["centre"],
+    "meter": ["metre"],
+    "theater": ["theatre"],
+    "gray": ["grey"],
+    "program": ["programme"],
+    "hardworking": ["hard-working", "hard working"],
+    "overweight": ["over-weight"],
+    "american": ["america", "americans"],
+    "apologize": ["apologise", "apologized", "apologised"],
+    "stomach": ["stomachache", "stomachaches"],
+    "headache": ["headaches"],
+    "fog": ["foggy"],
+    "transport": ["transportation", "transports", "transported"],
+    "transportation": ["transport"],
+    "review": ["reviewed", "reviews", "reviewing", "revision"],
+    "cultural": ["culture", "cultures"],
+    "introduce": ["introduction", "introduced", "introducing"],
+    "discipline": ["self-discipline", "self-disciplined"],
+    "spell": ["spelling", "spells", "spelled"],
+    "exam": ["examination", "exams", "examined"],
+    "holiday": ["holidays"],
+    "athlete": ["athletes"],
+    "independent": ["independence", "independently"],
+    "convenient": ["convenience"],
+    "cycle": ["cycling", "cycled", "cycles"],
+    "argue": ["argument", "arguments"],
+    "argument": ["arguments"],
+    "graduate": ["graduation", "graduated", "graduates"],
+    "scissors": ["scissor"],
+}
+
+# 只有这些词才走 -f/-fe → -ves，避免 giraffe → girafves 之类误配
+_F_VES_NOUNS = {
+    "calf", "half", "knife", "leaf", "life", "loaf", "self", "shelf", "thief", "wife", "wolf",
+}
+
 # 太短或功能词不单独用真题句去「硬配」，避免 a/the 命中整卷
 SKIP_WORDS = {
     "a", "an", "the", "of", "to", "in", "on", "at", "for", "and", "or", "but",
@@ -54,12 +94,15 @@ def _noun_forms(word: str) -> List[str]:
         out.append(w[:-1] + "ies")
     elif w.endswith(("s", "x", "z", "ch", "sh")):
         out.append(w + "es")
-    elif w.endswith("fe"):
-        out.append(w[:-2] + "ves")
-    elif w.endswith("f"):
-        out.append(w[:-1] + "ves")
+    elif w in _F_VES_NOUNS:
+        if w.endswith("fe"):
+            out.append(w[:-2] + "ves")
+        else:
+            out.append(w[:-1] + "ves")
     else:
         out.append(w + "s")
+        if not w.endswith("s"):
+            out.append(w + "es")
     return list(dict.fromkeys(out))
 
 
@@ -79,7 +122,55 @@ def word_forms(word: str) -> List[str]:
         forms.add(w + "es")
         forms.add(w + "ed")
         forms.add(w + "ing")
-    return [f for f in forms if f and f.isalpha() or "'" in f]
+    if len(w) >= 4:
+        forms.add(w + "y")
+        forms.add(w + "ly")
+        forms.add(w + "ful")
+        forms.add(w + "less")
+        forms.add(w + "ness")
+    if w.endswith("ful") and len(w) > 4:
+        forms.add(w[:-3])
+    if w.endswith("less") and len(w) > 5:
+        forms.add(w[:-4])
+    if w.endswith("ness") and len(w) > 5:
+        forms.add(w[:-4])
+    if w.endswith("ly") and len(w) > 4:
+        forms.add(w[:-2])
+    if w.endswith("y") and len(w) >= 5 and w[-2] not in "aeiou":
+        forms.add(w[:-1])
+    if w.endswith("y") and len(w) > 2:
+        forms.add(w[:-1] + "ily")
+        forms.add(w[:-1] + "ies")
+    forms.add(w + "'s")
+    if w.endswith("ce"):
+        forms.add(w[:-2] + "se")
+    if w.endswith("se") and len(w) > 3:
+        forms.add(w[:-2] + "ce")
+    if len(w) >= 3:
+        if w.endswith("y") and w[-2:] != "ay" and w[-2] not in "aeiou":
+            forms.add(w[:-1] + "ier")
+            forms.add(w[:-1] + "iest")
+        elif w.endswith("e"):
+            forms.add(w + "r")
+            forms.add(w + "st")
+        else:
+            forms.add(w + "er")
+            forms.add(w + "est")
+            if (
+                len(w) >= 3
+                and w[-1] not in "aeiouwy"
+                and w[-2] in "aeiou"
+                and w[-3] not in "aeiou"
+            ):
+                forms.add(w + w[-1] + "er")
+                forms.add(w + w[-1] + "est")
+    for extra in SPELLING_VARIANTS.get(w, []):
+        forms.add(extra.lower())
+    return [
+        f
+        for f in forms
+        if f and (f.replace("-", "").replace(" ", "").replace("'", "").isalpha())
+    ]
 
 
 def _pos_score(sentence: str, form: str, pos: str) -> int:
@@ -117,11 +208,14 @@ def _index() -> Dict[str, List[int]]:
     for i, item in enumerate(CORPUS):
         seen = set()
         for tok in _TOKEN.findall(item["en"] or ""):
-            key = tok.lower()
-            if key in seen:
-                continue
-            seen.add(key)
-            idx.setdefault(key, []).append(i)
+            parts = [tok.lower()]
+            if "-" in tok:
+                parts.extend(p for p in tok.lower().split("-") if len(p) >= 4)
+            for key in parts:
+                if key in seen:
+                    continue
+                seen.add(key)
+                idx.setdefault(key, []).append(i)
     return idx
 
 
@@ -132,11 +226,11 @@ def lookup_exam_examples(
     used_ids: Optional[Sequence[int]] = None,
 ) -> List[dict]:
     key = (word or "").lower().strip()
-    if not key or key in SKIP_WORDS:
+    if not key:
         return []
     idx = _index()
     used = set(used_ids or [])
-    parts = [p for p in key.split() if p and p not in SKIP_WORDS]
+    parts = [p for p in key.split() if p]
     candidates: List[Tuple[int, int, int]] = []  # score, -len, corpus_id
     if parts and len(parts) >= 2:
         scan_ids = range(len(CORPUS))
@@ -155,7 +249,7 @@ def lookup_exam_examples(
             continue
         item = CORPUS[cid]
         en = item["en"]
-        if len(en) < 22 or len(en) > 220:
+        if len(en) < 12 or len(en) > 240:
             continue
         if parts and len(parts) >= 2:
             low = en.lower()
@@ -190,7 +284,7 @@ def lookup_exam_examples(
                 "cn": cn,
                 "year": item.get("year") or "",
                 "section": item.get("section") or "",
-                "source": f"北京中考{item.get('year')}",
+                "source": f"{item.get('place') or '北京'}中考{item.get('year')}",
             }
         )
         if len(out) >= limit:

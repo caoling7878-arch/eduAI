@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import math
 import random
+import re
 from datetime import date, timedelta
 from pathlib import Path
 from typing import List, Optional
@@ -190,6 +191,59 @@ def _all_sense_label(w: WordOut) -> str:
     if w.meanings:
         return "；".join(_sense_label(m) for m in w.meanings if m.text)
     return w.meaning or ""
+
+
+_POS_HEAD = re.compile(
+    r"^(?:(?:[nv]|adj|adv|prep|conj|pron|num|art|int|aux|det|modal|vi|vt)\.\s*)+",
+    re.I,
+)
+
+
+def _plain_gloss(text: str) -> str:
+    """测验选项只用中文释义，去掉 n./v. 等词性标记，避免正确答案被标出。"""
+    raw = (text or "").strip()
+    if not raw:
+        return ""
+    parts: List[str] = []
+    for piece in re.split(r"[；;]", raw):
+        p = _POS_HEAD.sub("", piece.strip()).strip()
+        if p:
+            parts.append(p)
+    return "；".join(parts) if parts else raw
+
+
+def _quiz_option_label(w: WordOut) -> str:
+    # 与词库 meaning 字段保持同一风格（不带词性），多义项用分号连接且去重
+    glosses: List[str] = []
+    for m in w.meanings:
+        t = _plain_gloss(m.text)
+        if t and t not in glosses:
+            glosses.append(t)
+    if len(glosses) == 1:
+        return glosses[0]
+    compact = _plain_gloss(w.meaning)
+    if compact:
+        return compact
+    return "；".join(glosses)
+
+
+def _pick_distractors(correct: str, pool: List[str], n: int = 3) -> List[str]:
+    target_len = max(len(correct), 1)
+    seen = {correct}
+    cands: List[str] = []
+    for raw in pool:
+        label = _plain_gloss(raw)
+        if not label or label in seen:
+            continue
+        if correct in label or label in correct:
+            continue
+        seen.add(label)
+        cands.append(label)
+    cands.sort(key=lambda x: abs(len(x) - target_len))
+    similar, rest = cands[:16], cands[16:]
+    random.shuffle(similar)
+    random.shuffle(rest)
+    return (similar + rest)[:n]
 
 
 def _out(w: VocabWord, prog: Optional[VocabProgress] = None, role: str = "new") -> WordOut:
@@ -566,10 +620,9 @@ def course_quiz(user: User = Depends(get_current_user), db: Session = Depends(ge
     meanings_pool = [p.meaning for p in pool if p.meaning]
     items: List[QuizItem] = []
     for w in pack:
-        correct = _all_sense_label(w)
-        distractors = [m for m in meanings_pool if m != w.meaning and correct not in m and m not in correct]
-        random.shuffle(distractors)
-        opts = [correct] + distractors[:3]
+        correct = _quiz_option_label(w)
+        distractors = _pick_distractors(correct, meanings_pool, 3)
+        opts = [correct] + distractors
         while len(opts) < 4:
             opts.append(f"（干扰项{len(opts)}）")
         random.shuffle(opts)
@@ -577,7 +630,7 @@ def course_quiz(user: User = Depends(get_current_user), db: Session = Depends(ge
             QuizItem(
                 word_id=w.id,
                 word=w.word,
-                prompt=f"「{w.word}」的中文意思是？（含全部词性）",
+                prompt=f"「{w.word}」的中文意思是？",
                 options=opts,
             )
         )
@@ -600,11 +653,17 @@ def submit_quiz(
 
     for w in pack:
         ans = str(body.answers.get(str(w.id)) or body.answers.get(w.id) or "").strip()
-        ok_texts = {w.meaning, _all_sense_label(w)}
+        ok_texts = {
+            w.meaning,
+            _plain_gloss(w.meaning),
+            _all_sense_label(w),
+            _quiz_option_label(w),
+        }
         for m in w.meanings:
             ok_texts.add(m.text)
             ok_texts.add(_sense_label(m))
-        is_ok = ans in ok_texts
+            ok_texts.add(_plain_gloss(m.text))
+        is_ok = ans in {t for t in ok_texts if t}
 
         prog = db.scalar(
             select(VocabProgress).where(VocabProgress.user_id == user.id, VocabProgress.word_id == w.id)
