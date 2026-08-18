@@ -530,6 +530,8 @@ class VocabDailyLog(Base):
     review_count: Mapped[int] = mapped_column(Integer, default=0)
     quiz_total: Mapped[int] = mapped_column(Integer, default=0)
     quiz_correct: Mapped[int] = mapped_column(Integer, default=0)
+    # 最近一次测验结果（含错题解析），刷新页面仍可展示
+    quiz_json: Mapped[str] = mapped_column(Text, default="")
     stars_earned: Mapped[int] = mapped_column(Integer, default=0)
     completed: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

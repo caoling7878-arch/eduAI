@@ -212,6 +212,98 @@ def _plain_gloss(text: str) -> str:
     return "；".join(parts) if parts else raw
 
 
+def _answer_text(body: QuizSubmitIn, word_id: int) -> str:
+    raw = body.answers.get(str(word_id))
+    if raw is None:
+        raw = body.answers.get(word_id)
+    return str(raw or "").strip()
+
+
+def _is_correct_answer(w: WordOut, ans: str) -> bool:
+    if not ans:
+        return False
+    ok_texts = {
+        w.meaning,
+        _plain_gloss(w.meaning),
+        _all_sense_label(w),
+        _quiz_option_label(w),
+    }
+    for m in w.meanings:
+        ok_texts.add(m.text)
+        ok_texts.add(_sense_label(m))
+        ok_texts.add(_plain_gloss(m.text))
+    return ans in {t for t in ok_texts if t}
+
+
+def _wrong_reason(w: WordOut, ans: str, expected: str) -> str:
+    if not ans:
+        return f"本题未作选择。「{w.word}」的正确意思是「{expected}」。"
+    if ans == expected:
+        return ""
+    return (
+        f"你选择了「{ans}」，但「{w.word}」的正确意思是「{expected}」。"
+        f"所选释义属于另一个单词，词义不同，不能用来解释 {w.word}。"
+    )
+
+
+def _quiz_explanation(w: WordOut, ans: str, expected: str) -> str:
+    """生成错题详细解析：为何错、如何用例句区分干扰项。"""
+    parts: List[str] = []
+    parts.append(
+        f"本题考查的是单词「{w.word}」本身的中文意思，正确选项只能是「{expected}」。"
+    )
+    if ans and ans != expected:
+        parts.append(
+            f"你选的「{ans}」是干扰项，对应的是别的单词；把它套进 {w.word} 的句子里，意思会不通或完全跑偏。"
+        )
+    elif not ans:
+        parts.append("作答时漏选，无法判断你是否掌握该词，提交前必须每题都选。")
+    ex = next((m.example for m in w.meanings if m.example), "") or (w.example or "")
+    ex_cn = next((m.example_cn for m in w.meanings if m.example_cn), "")
+    if ex:
+        line = f"结合例句判断：{ex}"
+        if ex_cn:
+            line += f"（{ex_cn}）"
+        line += f" 句中的 {w.word} 应理解为「{expected}」"
+        if ans and ans != expected:
+            line += f"，而不是「{ans}」"
+        parts.append(line + "。")
+    if w.pos or w.scene:
+        bits = []
+        if w.pos:
+            bits.append(f"词性是 {w.pos}")
+        if w.scene:
+            bits.append(f"常出现在「{w.scene}」场景")
+        parts.append("另外，" + "，".join(bits) + "，记的时候可以和释义一起挂钩。")
+    if w.morph_story:
+        story = (w.morph_story or "").strip().rstrip("。！？.!?")
+        if story:
+            parts.append(f"记忆提示：{story}。")
+    parts.append(
+        f"建议把「{w.word}」和「{expected}」绑在一起记，并对照例句再读一遍；该词会进入下次优先复习。"
+    )
+    return "".join(parts)
+
+
+def _wrong_item(w: WordOut, ans: str, expected: str) -> dict:
+    return {
+        "word_id": w.id,
+        "word": w.word,
+        "phonetic": w.phonetic or "",
+        "your_answer": ans,
+        "expected": expected,
+        "pos": w.pos or "",
+        "scene": w.scene or "",
+        "meaning": w.meaning or "",
+        "meanings": [m.model_dump() for m in w.meanings],
+        "example": w.example or "",
+        "morph_story": w.morph_story or "",
+        "segments": [s.model_dump() for s in w.segments],
+        "reason": _wrong_reason(w, ans, expected),
+        "explanation": _quiz_explanation(w, ans, expected),
+    }
+
+
 def _quiz_option_label(w: WordOut) -> str:
     # 与词库 meaning 字段保持同一风格（不带词性），多义项用分号连接且去重
     glosses: List[str] = []
@@ -637,6 +729,22 @@ def course_quiz(user: User = Depends(get_current_user), db: Session = Depends(ge
     return items
 
 
+@router.get("/course/quiz/last")
+def last_quiz(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
+    """返回今日最近一次测验结果（含错题解析），未提交则为空对象。"""
+    today_s = date.today().isoformat()
+    log = db.scalar(
+        select(VocabDailyLog).where(VocabDailyLog.user_id == user.id, VocabDailyLog.day == today_s)
+    )
+    if not log or not (log.quiz_json or "").strip():
+        return {}
+    try:
+        data = json.loads(log.quiz_json)
+    except (json.JSONDecodeError, TypeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
 @router.post("/course/quiz/submit")
 def submit_quiz(
     body: QuizSubmitIn,
@@ -647,23 +755,28 @@ def submit_quiz(
     pack = _build_today_pack(user, db)
     today = date.today()
     today_s = today.isoformat()
+    total = len(pack)
+    if total == 0:
+        raise HTTPException(status_code=400, detail="今日词单为空，无法提交测验")
+
+    missing = [w.word for w in pack if not _answer_text(body, w.id)]
+    if missing:
+        shown = "、".join(missing[:8])
+        extra = f" 等 {len(missing)} 题" if len(missing) > 8 else f"（共 {len(missing)} 题）"
+        raise HTTPException(
+            status_code=400,
+            detail=f"还有题目未选择，不能提交。未作答：{shown}{extra}",
+        )
+
     correct_n = 0
     wrong_ids: List[int] = []
+    wrong_items: List[dict] = []
     details = []
 
     for w in pack:
-        ans = str(body.answers.get(str(w.id)) or body.answers.get(w.id) or "").strip()
-        ok_texts = {
-            w.meaning,
-            _plain_gloss(w.meaning),
-            _all_sense_label(w),
-            _quiz_option_label(w),
-        }
-        for m in w.meanings:
-            ok_texts.add(m.text)
-            ok_texts.add(_sense_label(m))
-            ok_texts.add(_plain_gloss(m.text))
-        is_ok = ans in {t for t in ok_texts if t}
+        ans = _answer_text(body, w.id)
+        expected = _quiz_option_label(w)
+        is_ok = _is_correct_answer(w, ans)
 
         prog = db.scalar(
             select(VocabProgress).where(VocabProgress.user_id == user.id, VocabProgress.word_id == w.id)
@@ -685,6 +798,7 @@ def submit_quiz(
                 prog.status = "known" if (prog.ease_step or 0) >= 3 else "learning"
         else:
             wrong_ids.append(w.id)
+            wrong_items.append(_wrong_item(w, ans, expected))
             step, interval, nxt = schedule_wrong(today)
             prog.ease_step = step
             prog.interval_days = interval
@@ -692,14 +806,22 @@ def submit_quiz(
             prog.wrong_count = (prog.wrong_count or 0) + 1
             prog.last_result = "wrong"
             prog.status = "hard"
-        details.append({"word_id": w.id, "word": w.word, "correct": is_ok, "expected": w.meaning})
+        details.append(
+            {
+                "word_id": w.id,
+                "word": w.word,
+                "correct": is_ok,
+                "your_answer": ans,
+                "expected": expected,
+            }
+        )
 
-    total = len(pack)
-    all_correct = total > 0 and correct_n == total
+    all_correct = correct_n == total
     reward = _get_or_create_reward(db, user.id)
     stars = 0
     streak = effective_streak(reward.last_checkin_date or "", reward.streak_days or 0, today)
     badge_note = ""
+    first_checkin = False
 
     log = db.scalar(
         select(VocabDailyLog).where(VocabDailyLog.user_id == user.id, VocabDailyLog.day == today_s)
@@ -716,7 +838,9 @@ def submit_quiz(
     log.quiz_correct = correct_n
     log.bank = prefs.bank
 
-    if all_correct and not log.completed:
+    # 全部作答即可打卡成功（不必全对）；加分规则不变：1–10 天每天 1 星，第 11 天起每天 2 星；断签从 1 重计
+    if not log.completed:
+        first_checkin = True
         yesterday = (today - timedelta(days=1)).isoformat()
         if reward.last_checkin_date == yesterday:
             streak = streak + 1
@@ -732,31 +856,41 @@ def submit_quiz(
         log.stars_earned = stars
         log.completed = True
         badge_note = "，并点亮连续打卡徽章" if has_streak_badge(streak) else ""
-    elif not all_correct:
-        log.completed = False
-        log.stars_earned = 0
-        if streak == 0:
-            reward.streak_days = 0
 
-    db.commit()
-    return {
+    if first_checkin:
+        if all_correct:
+            message = f"全部正确！打卡成功，获得 {stars} 颗星，连续打卡 {reward.streak_days} 天{badge_note}"
+        else:
+            message = (
+                f"打卡成功！答对 {correct_n}/{total}，获得 {stars} 颗星，连续打卡 {reward.streak_days} 天{badge_note}。"
+                "错题解析见下方，并已纳入下次优先复习"
+            )
+    else:
+        message = (
+            f"已重新提交：答对 {correct_n}/{total}。今日打卡已完成，不再重复加星"
+            + ("。" if all_correct else "。错题解析见下方，并已纳入下次优先复习")
+        )
+
+    result = {
         "total": total,
         "correct": correct_n,
         "wrong_ids": wrong_ids,
+        "wrong_items": wrong_items,
         "all_correct": all_correct,
+        "checked_in": True,
         "stars_earned": stars,
+        "today_stars": log.stars_earned or 0,
         "streak_days": reward.streak_days,
         "stars_total": reward.stars_total,
         "stars_month": reward.stars_month,
         "streak_badge": has_streak_badge(reward.streak_days or 0),
         "stars_per_day": star_for_streak(reward.streak_days or 0),
         "details": details,
-        "message": (
-            f"全部正确！获得 {stars} 颗星，连续打卡 {reward.streak_days} 天{badge_note}"
-            if all_correct
-            else f"答对 {correct_n}/{total}，错题已纳入优先复习"
-        ),
+        "message": message,
     }
+    log.quiz_json = json.dumps(result, ensure_ascii=False)
+    db.commit()
+    return result
 
 
 @router.post("/course/redeem")

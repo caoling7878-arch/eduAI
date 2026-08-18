@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import MorphIcon from '../components/MorphIcon.vue'
 import WordMeaningArt from '../components/WordMeaningArt.vue'
@@ -70,6 +70,40 @@ type Summary = {
 
 type QuizItem = { word_id: number; word: string; prompt: string; options: string[] }
 
+type WrongItem = {
+  word_id: number
+  word: string
+  phonetic: string
+  your_answer: string
+  expected: string
+  pos: string
+  scene: string
+  meaning: string
+  meanings: Meaning[]
+  example: string
+  morph_story: string
+  segments?: Segment[]
+  reason: string
+  explanation: string
+}
+
+type QuizResult = {
+  total: number
+  correct: number
+  wrong_ids: number[]
+  wrong_items: WrongItem[]
+  all_correct: boolean
+  checked_in?: boolean
+  stars_earned: number
+  today_stars?: number
+  streak_days: number
+  stars_total: number
+  stars_month: number
+  streak_badge: boolean
+  stars_per_day: number
+  message: string
+}
+
 const auth = useAuth()
 const router = useRouter()
 const phase = ref<'study' | 'quiz' | 'done'>('study')
@@ -91,11 +125,18 @@ const tip = ref('')
 const loadError = ref('')
 const quiz = ref<QuizItem[]>([])
 const answers = reactive<Record<number, string>>({})
-const quizResult = ref<any>(null)
+const quizResult = ref<QuizResult | null>(null)
+const quizTip = ref('')
+const missingIds = ref<Set<number>>(new Set())
 const submitting = ref(false)
 const speaking = ref(false)
 const speakTip = ref('')
 const ttsGender = ref<TtsGender>(getTtsGender())
+const answeredCount = computed(() => quiz.value.filter((q) => !!answers[q.word_id]).length)
+const wrongItems = computed(() => quizResult.value?.wrong_items || [])
+const todayStars = computed(
+  () => quizResult.value?.today_stars || quizResult.value?.stars_earned || summary.value?.today_stars || 0,
+)
 
 function chooseGender(g: TtsGender) {
   ttsGender.value = g
@@ -129,7 +170,17 @@ async function load() {
     words.value = await api('/vocab/course/today')
     idx.value = 0
     flipped.value = false
-    phase.value = summary.value?.today_completed ? 'done' : 'study'
+    if (summary.value?.today_completed) {
+      phase.value = 'done'
+      try {
+        const last = await api<QuizResult>('/vocab/course/quiz/last')
+        if (last?.total) quizResult.value = last
+      } catch {
+        /* 无历史测验结果时仍展示已打卡 */
+      }
+    } else {
+      phase.value = 'study'
+    }
     syncStreak(summary.value)
     await auth.track('love-words', 'course', 'started', { title: '我爱背单词' }, summary.value?.percent || 5)
   } catch (e) {
@@ -233,26 +284,64 @@ async function startQuiz() {
   quiz.value = await api('/vocab/course/quiz')
   for (const q of quiz.value) delete answers[q.word_id]
   quizResult.value = null
+  quizTip.value = ''
+  missingIds.value = new Set()
   phase.value = 'quiz'
 }
 
+function isMissing(wordId: number) {
+  return missingIds.value.has(wordId)
+}
+
+function clearMissed(wordId: number) {
+  if (!missingIds.value.has(wordId)) return
+  const next = new Set(missingIds.value)
+  next.delete(wordId)
+  missingIds.value = next
+  quizTip.value = next.size
+    ? `还有 ${next.size} 题未选择，漏选题目已标红，请全部作答后再提交`
+    : ''
+}
+
 async function submitQuiz() {
+  const missed = quiz.value.filter((q) => !String(answers[q.word_id] || '').trim())
+  if (missed.length) {
+    missingIds.value = new Set(missed.map((q) => q.word_id))
+    const names = missed.slice(0, 6).map((q) => q.word).join('、')
+    const extra = missed.length > 6 ? ` 等 ${missed.length} 题` : `（共 ${missed.length} 题）`
+    quizTip.value = `还有题目未选择，不能提交。未作答：${names}${extra}。漏选题目已标红。`
+    await nextTick()
+    document.querySelector('.quiz li.missed')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    return
+  }
+  missingIds.value = new Set()
+  quizTip.value = ''
   submitting.value = true
   try {
     const payload: Record<string, string> = {}
     for (const q of quiz.value) {
-      if (answers[q.word_id]) payload[String(q.word_id)] = answers[q.word_id]
+      payload[String(q.word_id)] = answers[q.word_id]
     }
-    quizResult.value = await api('/vocab/course/quiz/submit', {
+    quizResult.value = await api<QuizResult>('/vocab/course/quiz/submit', {
       method: 'POST',
       body: JSON.stringify({ answers: payload }),
     })
     summary.value = await api('/vocab/course/summary')
     syncStreak(summary.value)
     phase.value = 'done'
-    if (quizResult.value?.all_correct) {
-      await auth.track('love-words', 'course', 'completed', { title: '我爱背单词' }, summary.value?.percent || 10)
-    }
+    await auth.track(
+      'love-words',
+      'course',
+      'completed',
+      {
+        title: '我爱背单词',
+        correct: quizResult.value?.correct,
+        total: quizResult.value?.total,
+      },
+      summary.value?.percent || 10,
+    )
+  } catch (e) {
+    quizTip.value = e instanceof Error ? e.message : '提交失败'
   } finally {
     submitting.value = false
   }
@@ -495,39 +584,105 @@ onMounted(load)
     <!-- 测验 -->
     <template v-else-if="phase === 'quiz'">
       <h2 class="phase-title">今日测验</h2>
-      <p class="sub">全部答对才能打卡得星；答错会进入下次优先复习。</p>
+      <p class="sub">
+        请完成全部题目后再提交。全部作答即可打卡得星；答错会显示解析，并进入下次优先复习。
+      </p>
+      <p class="quiz-progress">已作答 {{ answeredCount }} / {{ quiz.length }}</p>
+      <p v-if="quizTip" class="quiz-tip" role="alert">{{ quizTip }}</p>
       <ul class="quiz">
-        <li v-for="q in quiz" :key="q.word_id">
-          <h3>{{ q.prompt }}</h3>
+        <li
+          v-for="(q, qi) in quiz"
+          :key="q.word_id"
+          :class="{ missed: isMissing(q.word_id) }"
+          :id="`quiz-q-${q.word_id}`"
+        >
+          <h3>
+            <span class="q-no">第 {{ qi + 1 }} 题</span>
+            {{ q.prompt }}
+            <em v-if="isMissing(q.word_id)" class="missed-tag">未选择</em>
+          </h3>
           <label v-for="opt in q.options" :key="opt" class="opt">
-            <input v-model="answers[q.word_id]" type="radio" :value="opt" />
+            <input
+              v-model="answers[q.word_id]"
+              type="radio"
+              :value="opt"
+              @change="clearMissed(q.word_id)"
+            />
             {{ opt }}
           </label>
         </li>
       </ul>
-      <button type="button" class="primary" :disabled="submitting" @click="submitQuiz">
-        {{ submitting ? '提交中…' : '提交测验' }}
-      </button>
+      <p v-if="quizTip" class="quiz-tip" role="alert">{{ quizTip }}</p>
+      <div class="footer-actions">
+        <button type="button" class="primary" :disabled="submitting" @click="submitQuiz">
+          {{ submitting ? '提交中…' : '提交测验' }}
+        </button>
+      </div>
     </template>
 
     <!-- 结果 -->
     <template v-else>
       <div class="done" v-if="quizResult || summary?.today_completed">
-        <h2>{{ quizResult?.all_correct || summary?.today_completed ? '今日打卡成功' : '继续加油' }}</h2>
+        <h2>今日打卡成功</h2>
         <p v-if="quizResult">{{ quizResult.message }}</p>
         <p v-else>今天已经完成背单词打卡。</p>
+        <p v-if="quizResult" class="score-line">
+          答对 <b>{{ quizResult.correct }}</b> / {{ quizResult.total }}
+          <template v-if="!quizResult.all_correct">
+            · 错 <b class="bad-n">{{ quizResult.wrong_items?.length || quizResult.wrong_ids?.length || 0 }}</b> 题
+          </template>
+        </p>
         <p v-if="summary?.streak_badge || quizResult?.streak_badge" class="badge-lit">
           连续打卡徽章已点亮，展示在头像旁
         </p>
         <p v-else-if="summary" class="badge-hint">
-          再连续打卡 {{ Math.max(10 - (summary.streak_days || 0), 0) }} 天可点亮徽章；从第 11 天起每天 2 颗星
+          再连续打卡 {{ Math.max(10 - (summary.streak_days || 0), 0) }} 天可点亮徽章；从第 11 天起每天 2 颗星。断打卡后连续天数与加分重新计算。
         </p>
         <div class="done-stats" v-if="summary">
           <span>连续 {{ summary.streak_days }} 天</span>
-          <span>今日 {{ quizResult?.stars_earned || summary.today_stars || 0 }}★</span>
+          <span>今日 {{ todayStars }}★</span>
           <span>本月 {{ summary.stars_month }}★</span>
           <span>累计 {{ summary.stars_total }}★</span>
         </div>
+
+        <section v-if="wrongItems.length" class="wrong-box">
+          <h3>错题解析</h3>
+          <p class="wrong-lead">对照正确答案看清为何选错，这些词会进入下次优先复习。</p>
+          <article v-for="(item, wi) in wrongItems" :key="item.word_id" class="wrong-card">
+            <header>
+              <span class="q-no">错题 {{ wi + 1 }}</span>
+              <strong class="wrong-word">{{ item.word }}</strong>
+              <span v-if="item.phonetic" class="ph">{{ item.phonetic }}</span>
+            </header>
+            <p class="ans-row">
+              <span class="yours">你的答案：{{ item.your_answer || '（未选择）' }}</span>
+              <span class="right">正确答案：{{ item.expected }}</span>
+            </p>
+            <p class="reason">{{ item.reason }}</p>
+            <div class="explain">
+              <h4>详细解析</h4>
+              <p v-if="item.pos || item.scene" class="meta-line">
+                <template v-if="item.pos">词性 {{ item.pos }}</template>
+                <template v-if="item.pos && item.scene"> · </template>
+                <template v-if="item.scene">场景 {{ item.scene }}</template>
+              </p>
+              <ul v-if="item.meanings?.length" class="meanings">
+                <li v-for="(m, mi) in item.meanings" :key="mi" class="sense">
+                  <p class="sense-head">
+                    <em v-if="m.pos">{{ m.pos }}</em>
+                    {{ m.text }}
+                  </p>
+                  <p v-if="m.example" class="example">{{ m.example }}</p>
+                  <p v-if="m.example_cn" class="example-cn">{{ m.example_cn }}</p>
+                </li>
+              </ul>
+              <p v-else-if="item.meaning" class="sense-head">{{ item.meaning }}</p>
+              <p v-if="item.morph_story" class="story">记忆提示：{{ item.morph_story }}</p>
+              <p v-if="item.explanation" class="explanation-text">{{ item.explanation }}</p>
+            </div>
+          </article>
+        </section>
+
         <div class="footer-actions">
           <button type="button" class="ghost-btn" @click="phase = 'study'">再看一遍卡片</button>
           <button type="button" class="primary" @click="startQuiz">重新测验</button>
@@ -918,6 +1073,44 @@ h1 {
   padding: 14px;
   border: 1px solid rgba(15, 107, 92, 0.12);
 }
+.quiz li.missed {
+  border-color: #dc2626;
+  background: #fef2f2;
+  box-shadow: 0 0 0 1px #dc2626;
+}
+.quiz li.missed h3 {
+  color: #b91c1c;
+}
+.q-no {
+  display: inline-block;
+  margin-right: 8px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--brand);
+  letter-spacing: 0.04em;
+}
+.quiz li.missed .q-no {
+  color: #dc2626;
+}
+.missed-tag {
+  margin-left: 8px;
+  color: #dc2626;
+  font-size: 0.8rem;
+  font-style: normal;
+  font-weight: 800;
+}
+.quiz-progress {
+  font-weight: 600;
+  color: var(--brand-deep);
+}
+.quiz-tip {
+  color: #b91c1c;
+  font-weight: 700;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 10px;
+  padding: 10px 12px;
+}
 .opt {
   display: flex;
   gap: 8px;
@@ -931,13 +1124,99 @@ h1 {
   border: 1px solid rgba(15, 107, 92, 0.12);
   text-align: center;
 }
+.score-line {
+  font-size: 1.05rem;
+}
+.score-line b {
+  color: var(--brand-deep);
+}
+.bad-n {
+  color: #b91c1c !important;
+}
+.wrong-box {
+  text-align: left;
+  margin: 20px 0 8px;
+}
+.wrong-box h3 {
+  margin: 0 0 6px;
+  font-family: 'Noto Serif SC', serif;
+  color: #9a3412;
+}
+.wrong-lead {
+  color: var(--muted);
+  font-size: 0.9rem;
+  margin: 0 0 12px;
+}
+.wrong-card {
+  background: #fffaf7;
+  border: 1px solid rgba(185, 28, 28, 0.18);
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin-bottom: 12px;
+}
+.wrong-card header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.wrong-word {
+  font-size: 1.35rem;
+  font-family: 'Noto Serif SC', serif;
+  color: var(--brand-deep);
+}
+.ans-row {
+  display: grid;
+  gap: 4px;
+  margin: 0 0 8px;
+  font-size: 0.92rem;
+}
+.ans-row .yours {
+  color: #b91c1c;
+}
+.ans-row .right {
+  color: #0b5a4e;
+  font-weight: 700;
+}
+.reason {
+  margin: 0 0 10px;
+  color: #7c2d12;
+  line-height: 1.55;
+}
+.explain {
+  background: #fff;
+  border-radius: 10px;
+  padding: 10px 12px;
+  border: 1px solid rgba(15, 107, 92, 0.1);
+}
+.explain h4 {
+  margin: 0 0 8px;
+  font-size: 0.85rem;
+  color: var(--brand-deep);
+}
+.meta-line {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.explanation-text {
+  margin: 10px 0 0;
+  color: #334;
+  line-height: 1.65;
+  font-size: 0.92rem;
+}
 .done-stats {
   display: flex;
   justify-content: center;
+  flex-wrap: wrap;
   gap: 16px;
   margin: 14px 0;
   color: var(--brand-deep);
   font-weight: 600;
+}
+.done .footer-actions {
+  justify-content: center;
 }
 .phase-title {
   font-family: 'Noto Serif SC', serif;

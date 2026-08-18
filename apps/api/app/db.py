@@ -52,6 +52,7 @@ def ensure_sqlite_columns() -> None:
         "vocab_daily_logs": [
             ("daily_count", "INTEGER DEFAULT 0"),
             ("pack_json", "TEXT DEFAULT ''"),
+            ("quiz_json", "TEXT DEFAULT ''"),
         ],
         "grade_tasks": [
             ("qc_status", "VARCHAR(32) DEFAULT 'none'"),
